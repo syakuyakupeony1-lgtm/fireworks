@@ -171,10 +171,10 @@ canvas{display:block;width:100vw;height:100vh;touch-action:manipulation;cursor:c
   align-items:center;justify-content:center;
   pointer-events:none;z-index:30;opacity:0;
 }
-#ms.show{animation:msf 3s cubic-bezier(.22,1,.36,1) forwards}
+#ms.show{animation:msf 4.5s cubic-bezier(.22,1,.36,1) forwards}
 @keyframes msf{
-  0%{opacity:0;transform:scale(.82)} 15%{opacity:1;transform:scale(1)}
-  65%{opacity:1;transform:scale(1)}  100%{opacity:0;transform:scale(1.06)}
+  0%{opacity:0;transform:scale(.82)} 10%{opacity:1;transform:scale(1)}
+  75%{opacity:1;transform:scale(1)}  100%{opacity:0;transform:scale(1.06)}
 }
 #msN{
   font-family:var(--fd);font-size:clamp(80px,18vw,160px);font-weight:700;
@@ -198,6 +198,11 @@ canvas{display:block;width:100vw;height:100vh;touch-action:manipulation;cursor:c
   <div class="hud-cell">
     <span class="hud-v" id="sOnline">—</span>
     <span class="hud-l">参加中</span>
+  </div>
+  <div class="hud-sep"></div>
+  <div class="hud-cell">
+    <span class="hud-v" id="sVisitors">—</span>
+    <span class="hud-l">のべ参加</span>
   </div>
   <div class="hud-sep"></div>
   <div class="hud-cell">
@@ -279,74 +284,93 @@ const Sfx = (() => {
   function noise(){if(!nBuf){const l=A.sampleRate*2;nBuf=A.createBuffer(1,l,A.sampleRate);const d=nBuf.getChannelData(0);for(let i=0;i<l;i++)d[i]=Math.random()*2-1;}return nBuf;}
   function sat(){const ws=A.createWaveShaper();if(!satCurve){satCurve=new Float32Array(1024);for(let i=0;i<1024;i++)satCurve[i]=Math.tanh((i/511.5-1)*3);}ws.curve=satCurve;return ws;}
   function route(x){const mix=A.createGain();mix.gain.value=1;const pan=A.createStereoPanner?A.createStereoPanner():null;if(pan){pan.pan.value=Math.max(-.8,Math.min(.8,(x/W)*1.6-.8));mix.connect(pan);pan.connect(master);pan.connect(vSend);}else{mix.connect(master);mix.connect(vSend);}return mix;}
+  /* ── 混雑制御: 同時発音数に応じて1発あたりの音量を自動で下げる ── */
+  let whisN=0,ftnN=0,boomT=[];
+  function boomDensity(){const now=A.currentTime;while(boomT.length&&now-boomT[0]>1.2)boomT.shift();return boomT.length;}
   function whistle(dur,x){
     if(muted)return()=>{};
-    const ac=boot(),t0=ac.currentTime,mx=route(x);
+    const ac=boot();
+    if(whisN>=5)return()=>{};          // 同時5本まで(超過分は省略)
+    whisN++;const wk=1/Math.sqrt(whisN);
+    const t0=ac.currentTime,mx=route(x);
     const osc=ac.createOscillator();osc.type="triangle";
     osc.frequency.setValueAtTime(2300,t0);osc.frequency.exponentialRampToValueAtTime(550,t0+dur);
     const vib=ac.createOscillator();vib.type="sine";
     vib.frequency.setValueAtTime(19,t0);vib.frequency.linearRampToValueAtTime(8,t0+dur);
     const vG=ac.createGain();vG.gain.value=70;vib.connect(vG);vG.connect(osc.frequency);
     const oG=ac.createGain();
-    oG.gain.setValueAtTime(.0001,t0);oG.gain.exponentialRampToValueAtTime(.1,t0+.12);
-    oG.gain.setValueAtTime(.1,t0+dur*.7);oG.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+    oG.gain.setValueAtTime(.0001,t0);oG.gain.exponentialRampToValueAtTime(.1*wk,t0+.12);
+    oG.gain.setValueAtTime(.1*wk,t0+dur*.7);oG.gain.exponentialRampToValueAtTime(.0001,t0+dur);
     const ns=ac.createBufferSource();ns.buffer=noise();ns.loop=true;
     const bp=ac.createBiquadFilter();bp.type="bandpass";bp.Q.value=1.2;
     bp.frequency.setValueAtTime(3200,t0);bp.frequency.exponentialRampToValueAtTime(800,t0+dur);
     const nG=ac.createGain();
-    nG.gain.setValueAtTime(.0001,t0);nG.gain.exponentialRampToValueAtTime(.045,t0+.2);
+    nG.gain.setValueAtTime(.0001,t0);nG.gain.exponentialRampToValueAtTime(.045*wk,t0+.2);
     nG.gain.exponentialRampToValueAtTime(.0001,t0+dur);
     osc.connect(oG);oG.connect(mx);ns.connect(bp);bp.connect(nG);nG.connect(mx);
     osc.start(t0);vib.start(t0);ns.start(t0);
     const te=t0+dur+.1;osc.stop(te);vib.stop(te);ns.stop(te);
+    osc.onended=()=>{whisN=Math.max(0,whisN-1);};
     return()=>{const n=ac.currentTime;oG.gain.cancelScheduledValues(n);nG.gain.cancelScheduledValues(n);oG.gain.setTargetAtTime(.0001,n,.03);nG.gain.setTargetAtTime(.0001,n,.03);};
   }
   function boom(sz=1,x){
     if(muted)return;
-    const ac=boot(),t0=ac.currentTime,mx=route(x);
+    const ac=boot(),k=boomDensity();
+    if(k>=9)return;                    // 直近1.2秒で9発を超えたら省略
+    boomT.push(ac.currentTime);
+    const dk=1/Math.sqrt(1+k*.75);     // 混雑時ダッキング
+    const t0=ac.currentTime+(k?Math.random()*.07:0); // 破裂音の時間をずらして濁り防止
+    const mx=route(x);
     const a=ac.createBufferSource();a.buffer=noise();
     const ah=ac.createBiquadFilter();ah.type="highpass";ah.frequency.value=1500;
-    const aG=ac.createGain();aG.gain.setValueAtTime(.55*sz,t0);aG.gain.exponentialRampToValueAtTime(.0001,t0+.06);
+    const aG=ac.createGain();aG.gain.setValueAtTime(.55*sz*dk,t0);aG.gain.exponentialRampToValueAtTime(.0001,t0+.06);
     a.connect(ah);ah.connect(aG);aG.connect(mx);a.start(t0);a.stop(t0+.08);
     const sub=ac.createOscillator();sub.type="sine";
     sub.frequency.setValueAtTime(110/sz,t0);sub.frequency.exponentialRampToValueAtTime(28,t0+.5*sz);
-    const sG=ac.createGain();sG.gain.setValueAtTime(1.0*sz,t0);sG.gain.exponentialRampToValueAtTime(.0001,t0+1.1*sz);
+    const sG=ac.createGain();sG.gain.setValueAtTime(1.0*sz*dk,t0);sG.gain.exponentialRampToValueAtTime(.0001,t0+1.1*sz);
     sub.connect(sG);sG.connect(mx);sub.start(t0);sub.stop(t0+1.2*sz);
     const bd=ac.createBufferSource();bd.buffer=noise();const sv=sat();
     const lp=ac.createBiquadFilter();lp.type="lowpass";
     lp.frequency.setValueAtTime(5500,t0);lp.frequency.exponentialRampToValueAtTime(120,t0+.8*sz);
-    const bG=ac.createGain();bG.gain.setValueAtTime(.85*sz,t0);bG.gain.exponentialRampToValueAtTime(.0001,t0+.9*sz);
+    const bG=ac.createGain();bG.gain.setValueAtTime(.85*sz*dk,t0);bG.gain.exponentialRampToValueAtTime(.0001,t0+.9*sz);
     bd.connect(sv);sv.connect(lp);lp.connect(bG);bG.connect(mx);bd.start(t0);bd.stop(t0+sz);
-    const ru=ac.createBufferSource();ru.buffer=noise();ru.loop=true;
-    const rl=ac.createBiquadFilter();rl.type="lowpass";rl.frequency.value=110;
-    const rG=ac.createGain();
-    rG.gain.setValueAtTime(.0001,t0);rG.gain.exponentialRampToValueAtTime(.32*sz,t0+.1);
-    rG.gain.exponentialRampToValueAtTime(.0001,t0+2.2*sz);
-    ru.connect(rl);rl.connect(rG);rG.connect(mx);ru.start(t0);ru.stop(t0+2.4*sz);
+    if(k<5){ // 余韻は空いている時だけ重ねる(低域の飽和防止)
+      const ru=ac.createBufferSource();ru.buffer=noise();ru.loop=true;
+      const rl=ac.createBiquadFilter();rl.type="lowpass";rl.frequency.value=110;
+      const rG=ac.createGain();
+      rG.gain.setValueAtTime(.0001,t0);rG.gain.exponentialRampToValueAtTime(.32*sz*dk,t0+.1);
+      rG.gain.exponentialRampToValueAtTime(.0001,t0+2.2*sz);
+      ru.connect(rl);rl.connect(rG);rG.connect(mx);ru.start(t0);ru.stop(t0+2.4*sz);
+    }
   }
   function crackle(sz=1,x){
     if(muted)return;
-    const ac=boot(),mx=route(x),n=Math.floor(8+Math.random()*10*sz);
+    const ac=boot(),k=boomDensity();
+    if(k>=7)return;
+    const ck=1/(1+k*.5),mx=route(x),n=Math.floor((8+Math.random()*10*sz)*ck);
     for(let i=0;i<n;i++){
       const t=ac.currentTime+.15+Math.random()*1.4*sz;
       const p=ac.createBufferSource();p.buffer=noise();
       const hp=ac.createBiquadFilter();hp.type="highpass";hp.frequency.value=3000+Math.random()*5000;
-      const g=ac.createGain();g.gain.setValueAtTime(.05+Math.random()*.07,t);g.gain.exponentialRampToValueAtTime(.0001,t+.04);
+      const g=ac.createGain();g.gain.setValueAtTime((.05+Math.random()*.07)*ck,t);g.gain.exponentialRampToValueAtTime(.0001,t+.04);
       p.connect(hp);hp.connect(g);g.connect(mx);p.start(t);p.stop(t+.06);
     }
   }
   function fountain(dur,x){
     if(muted)return()=>{};
-    const ac=boot(),t0=ac.currentTime,mx=route(x);
+    const ac=boot();ftnN++;
+    const fk=.18/Math.sqrt(ftnN);
+    const t0=ac.currentTime,mx=route(x);
     const ns=ac.createBufferSource();ns.buffer=noise();ns.loop=true;
     const bp=ac.createBiquadFilter();bp.type="bandpass";bp.frequency.value=1300;bp.Q.value=0.8;
     const lfo=ac.createOscillator();lfo.frequency.value=3.5;
     const lG=ac.createGain();lG.gain.value=380;lfo.connect(lG);lG.connect(bp.frequency);
     const g=ac.createGain();
-    g.gain.setValueAtTime(.0001,t0);g.gain.exponentialRampToValueAtTime(.18,t0+.3);
-    g.gain.setValueAtTime(.18,t0+dur-.5);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+    g.gain.setValueAtTime(.0001,t0);g.gain.exponentialRampToValueAtTime(fk,t0+.3);
+    g.gain.setValueAtTime(fk,t0+dur-.5);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
     ns.connect(bp);bp.connect(g);g.connect(mx);ns.start(t0);lfo.start(t0);
     ns.stop(t0+dur+.1);lfo.stop(t0+dur+.1);
+    ns.onended=()=>{ftnN=Math.max(0,ftnN-1);};
     return()=>{const n=ac.currentTime;g.gain.cancelScheduledValues(n);g.gain.setTargetAtTime(.0001,n,.1);};
   }
   return{
@@ -378,7 +402,7 @@ window.addEventListener("resize",resize);resize();
  * Entities
  * ================================================================ */
 const rockets=[],particles=[],flashes=[],fountainObjs=[],ripples=[];
-const MAX_P=3800,GRAVITY=0.06;
+const MAX_P=5200,GRAVITY=0.06;
 const COLORS=[["#ff5252","#ffd180"],["#69f0ae","#b9f6ca"],["#40c4ff","#80d8ff"],["#ffd740","#ffff8d"],["#ff4081","#ff80ab"],["#e040fb","#ea80fc"],["#fff","#b3e5fc"]];
 const TYPES_K=["peony","chrys","willow","ring","heart","senrin","change"];
 
@@ -434,9 +458,9 @@ class Fountain{
 }
 
 class Rocket{
-  constructor(tx,ty,scatter=0,type="random"){
+  constructor(tx,ty,scatter=0,type="random",sz){
     this.type=type==="random"?TYPES_K[(Math.random()*TYPES_K.length)|0]:type;
-    this.x=tx+R(-scatter,scatter);this.y=HZ+3;this.targetY=Math.min(ty,HZ-60);this.sz=R(.7,1.5);
+    this.x=tx+R(-scatter,scatter);this.y=HZ+3;this.targetY=Math.min(ty,HZ-60);this.sz=sz||R(.7,1.5);
     const h=this.y-this.targetY;this.vy=-Math.sqrt(2*GRAVITY*Math.max(h,40));this.vx=0;
     this.colors=COLORS[(Math.random()*COLORS.length)|0];this.trail=[];
     this.flightTime=(-this.vy/GRAVITY)/60;this.stopW=Sfx.whistle(this.flightTime,this.x);
@@ -583,7 +607,9 @@ function setConnState(state){
 }
 
 // ── 参加者数 / 累計をセット ──
+const sVisEl = document.getElementById("sVisitors");
 function setOnline(n){ sOnlineEl.textContent = n==null ? "—" : String(n); }
+function setVisitors(n){ sVisEl.textContent = n==null ? "—" : Number(n).toLocaleString(); }
 function setTotal(n){
   localTotal = n;
   localStorage.setItem("fw_total", n);
@@ -622,16 +648,24 @@ if(SB_URL && SB_KEY){
   s.onload=()=>{
     sbClient = window.supabase.createClient(SB_URL, SB_KEY);
 
-    // ① 累計初期値を取得
-    sbClient.from("fw_stats").select("value").eq("key","total").single()
+    // ① 累計初期値を取得（発数＋のべ参加者数）
+    sbClient.from("fw_stats").select("key,value").in("key",["total","visitors"])
       .then(({data,error})=>{
-        if(!error && data) setTotal(Number(data.value));
+        if(error || !data) return;
+        for(const row of data){
+          if(row.key==="total") setTotal(Number(row.value));
+          if(row.key==="visitors") setVisitors(Number(row.value));
+        }
       });
 
     // ② 累計のリアルタイム購読
     sbClient.channel("stats-watch")
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"fw_stats"},
-        p=>{ if(!soloMode) setTotal(Number(p.new.value)); })
+        p=>{
+          if(soloMode || !p.new) return;
+          if(p.new.key==="total") setTotal(Number(p.new.value));
+          if(p.new.key==="visitors") setVisitors(Number(p.new.value));
+        })
       .subscribe();
 
     // ③ メインチャンネル（Presence + Broadcast）
@@ -660,6 +694,11 @@ if(SB_URL && SB_KEY){
         setConnState("live");
         soloBtn.style.display="inline-flex";
         soloDivider.style.display="block";
+        // 初参加のブラウザなら「のべ参加者数」を+1
+        if(!localStorage.getItem("fw_seen")){
+          localStorage.setItem("fw_seen","1");
+          sbClient.rpc("fw_visit");
+        }
         // ロード前に溜まった発数を一括送信
         if(pendingTotal > 0){
           for(let i=0;i<pendingTotal;i++) sbClient.rpc("fw_increment");
@@ -709,14 +748,26 @@ function incShot(){
   if(shotCount%50===0) milestone(shotCount);
 }
 function milestone(n){
-  const bc=Math.min(6+Math.floor(n/50),18);
-  for(let i=0;i<bc;i++)
-    setTimeout(()=>rockets.push(new Rocket(R(W*.08,W*.92),R(H*.07,H*.38),0,TYPES_K[(Math.random()*TYPES_K.length)|0])),i*R(70,200));
-  const fc=Math.min(3+Math.floor(n/100),7);
-  for(let i=0;i<fc;i++)setTimeout(()=>fountainObjs.push(new Fountain(W*(i+.5)/fc,5)),i*110);
+  const lvl=Math.min(Math.floor(n/50),8); // 節目を重ねるほど豪華に
+  // ① オープニング: 中央に超大玉
+  rockets.push(new Rocket(W*.5,H*.11,0,"chrys",2.2));
+  // ② スターマイン(速射連発) — 画面全幅に波状で
+  const volley=14+lvl*3;
+  for(let i=0;i<volley;i++){
+    const sweep=(i/volley)*W*.88+W*.06; // 左→右へ流れる打ち上げ
+    setTimeout(()=>rockets.push(new Rocket(sweep+R(-40,40),R(H*.10,H*.42),0,TYPES_K[(Math.random()*TYPES_K.length)|0],R(.8,1.5))),350+i*120);
+  }
+  // ③ 水際全面に噴水のカーテン
+  const fc=Math.min(5+lvl,9);
+  for(let i=0;i<fc;i++)setTimeout(()=>fountainObjs.push(new Fountain(W*(i+.5)/fc,5.5)),250+i*90);
+  // ④ 大柳3連(しだれの幕)
+  [W*.22,W*.5,W*.78].forEach((x,i)=>setTimeout(()=>rockets.push(new Rocket(x,H*.10,0,"willow",2.0)),2400+i*280));
+  // ⑤ フィナーレ: 千輪の超大玉 + 両脇にハート
+  setTimeout(()=>rockets.push(new Rocket(W*.5,H*.09,0,"senrin",2.4)),3600);
+  setTimeout(()=>{rockets.push(new Rocket(W*.28,H*.18,0,"heart",1.6));rockets.push(new Rocket(W*.72,H*.18,0,"heart",1.6));},3900);
   msN.textContent=n;msEl.classList.remove("show");
   if(msTimer)clearTimeout(msTimer);
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{msEl.classList.add("show");msTimer=setTimeout(()=>msEl.classList.remove("show"),3200);}));
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{msEl.classList.add("show");msTimer=setTimeout(()=>msEl.classList.remove("show"),4600);}));
 }
 
 /* ================================================================
