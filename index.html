@@ -230,30 +230,32 @@ canvas{display:block;width:100vw;height:100vh;touch-action:manipulation;cursor:c
 "use strict";
 
 /* ================================================================
- * Firebase 設定（任意）
+ * Supabase 設定（任意）
  * ── 設定すると全ユーザーの花火がリアルタイムで共有されます ──
  *
  * 手順:
- * 1. https://console.firebase.google.com/ でプロジェクトを作成
- * 2. Realtime Database を有効化（テストモードでOK）
- * 3. プロジェクト設定 → 「ウェブアプリを追加」→ 設定値をここに貼る
- * 4. Database Rules を下記に設定:
- *    { "rules": { ".read": true, ".write": true } }
+ * 1. https://supabase.com でプロジェクトを作成（無料）
+ * 2. SQL Editor で下記を一度だけ実行:
  *
+ *    create table if not exists fw_stats (key text primary key, value bigint default 0);
+ *    insert into fw_stats values ('total', 0) on conflict do nothing;
+ *    alter table fw_stats enable row level security;
+ *    create policy "public read" on fw_stats for select using (true);
+ *    create or replace function fw_increment() returns void
+ *      language sql security definer as
+ *      $$ update fw_stats set value = value + 1 where key = 'total'; $$;
+ *    grant execute on function fw_increment() to anon;
+ *    alter publication supabase_realtime add table fw_stats;
+ *
+ * 3. Project Settings → API で「Project URL」と「anon public キー」をコピー
+ * 4. 下の SB_URL / SB_KEY に貼り付け
+ *
+ * ※打ち上げイベントと参加人数は Broadcast / Presence(メモリ上)で
+ *   やり取りするため、テーブルは累計カウンター1つだけでOK。
  * 設定しない場合はソロモードで動作します。
  * ================================================================ */
-const FB_CONFIG = null;
-/*
-const FB_CONFIG = {
-  apiKey:        "YOUR_API_KEY",
-  authDomain:    "YOUR_PROJECT.firebaseapp.com",
-  databaseURL:   "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-  projectId:     "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "000000000000",
-  appId:         "1:000000000000:web:xxxxxxxxxxxx",
-};
-*/
+const SB_URL = null; // 例: "https://abcdefg.supabase.co"
+const SB_KEY = null; // 例: "eyJhbGciOiJIUzI1NiIs..."(anon public)
 
 /* ================================================================
  * Sound Engine — 4層ドン / リバーブ / ステレオ定位 / 噴水シュー
@@ -818,7 +820,7 @@ document.getElementById("full-watch").addEventListener("click", () => {
 });
 
 const Multi=(()=>{
-  if(!FB_CONFIG){
+  if(!SB_URL||!SB_KEY){
     return {
       broadcast:()=>{},
       incTotal(){
@@ -832,84 +834,59 @@ const Multi=(()=>{
 
   const uid=sessionStorage.getItem("fw_uid")||Math.random().toString(36).slice(2);
   sessionStorage.setItem("fw_uid",uid);
-  let db=null;
+  let sb=null, chan=null, joined=false;
 
-  function initFB(){
-    firebase.initializeApp(FB_CONFIG);
-    db=firebase.database();
+  function init(){
+    sb = window.supabase.createClient(SB_URL, SB_KEY);
 
-    // ─ 入場チェック: 定員を超えていたら観覧モード ─
-    db.ref("fw_presence").once("value", snap => {
-      const current = snap.numChildren();
-      if(current >= CAPACITY){
-        fullNow.textContent = current;
-        fullOverlay.classList.add("show");
-        // 観覧専用: 他者の花火だけ受信する
-        listenLaunches();
-        listenStats();
-        return;
+    // ─ 累計発数: 初期値取得 + リアルタイム購読 ─
+    sb.from("fw_stats").select("value").eq("key","total").single()
+      .then(({data})=>{ if(data) sTotalEl.textContent=Number(data.value).toLocaleString(); });
+    sb.channel("stats-watch")
+      .on("postgres_changes",
+        {event:"UPDATE",schema:"public",table:"fw_stats"},
+        p=>{ sTotalEl.textContent=Number(p.new.value).toLocaleString(); })
+      .subscribe();
+
+    // ─ メインチャンネル: Presence(参加人数) + Broadcast(打ち上げ) ─
+    chan = sb.channel("fireworks", {config:{presence:{key:uid}, broadcast:{self:false}}});
+
+    chan.on("presence", {event:"sync"}, ()=>{
+      const n = Object.keys(chan.presenceState()).length;
+      // 初回sync: 定員チェックしてから入場
+      if(!joined && !viewOnly){
+        if(n >= CAPACITY){
+          fullNow.textContent = n;
+          fullOverlay.classList.add("show");
+          return; // track せず観覧のみ(Broadcastは受信できる)
+        }
+        joined = true;
+        chan.track({t: Date.now()});
+        badgeEl.textContent="ライブ"; badgeEl.classList.add("live");
       }
-      // ─ 定員内 → プレゼンス登録 ─
-      const presRef = db.ref(`fw_presence/${uid}`);
-      presRef.set({t: firebase.database.ServerValue.TIMESTAMP});
-      presRef.onDisconnect().remove();
-      listenPresence();
-      listenStats();
-      listenLaunches();
-      badgeEl.textContent="ライブ"; badgeEl.classList.add("live");
+      sOnlineEl.textContent = `${Math.max(n, joined?1:0)}人`;
     });
 
-    // 人数が増減したとき、満員になったら観覧モードに切り替え
-    function listenPresence(){
-      db.ref("fw_presence").on("value", snap => {
-        const n = snap.numChildren();
-        sOnlineEl.textContent = `${n}人`;
-        // 自分の参加後に他人が来て超えるケースはほぼないが念のため
-        if(n > CAPACITY && !viewOnly){
-          badgeEl.textContent="満員"; badgeEl.classList.add("full");
-        }
-      });
-    }
+    chan.on("broadcast", {event:"launch"}, ({payload:d})=>{
+      if(!d || d.uid===uid) return;
+      const x=d.xr*W, y=d.yr*HZ;
+      if(d.type==="fountain") fountainObjs.push(new Fountain(x));
+      else rockets.push(new Rocket(x,y,0,d.type));
+    });
 
-    function listenStats(){
-      db.ref("fw_stats/total").on("value", snap => {
-        sTotalEl.textContent = ((snap.val()||0)).toLocaleString();
-      });
-    }
-
-    function listenLaunches(){
-      const since = Date.now();
-      db.ref("fw_launches").orderByChild("t").startAt(since).on("child_added", snap => {
-        const d = snap.val(); if(!d || d.uid===uid) return;
-        const x = d.xr*W, y = d.yr*HZ;
-        if(d.type==="fountain") fountainObjs.push(new Fountain(x));
-        else rockets.push(new Rocket(x,y,0,d.type));
-        setTimeout(()=>snap.ref.remove(), 20000);
-      });
-      // 定期クリーンアップ
-      setInterval(()=>{
-        db.ref("fw_launches").once("value", snap=>{
-          const old=Date.now()-30000;
-          snap.forEach(c=>{if((c.val().t||0)<old)c.ref.remove();});
-        });
-      }, 60000);
-    }
+    chan.subscribe();
   }
 
-  const s1=document.createElement("script");
-  s1.src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js";
-  s1.onload=()=>{
-    const s2=document.createElement("script");
-    s2.src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js";
-    s2.onload=initFB;
-    document.head.appendChild(s2);
-  };
-  document.head.appendChild(s1);
+  // supabase-js v2 を CDN から動的ロード
+  const s=document.createElement("script");
+  s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
+  s.onload=init;
+  document.head.appendChild(s);
 
   function broadcast(x,y,type){
-    if(!db||viewOnly)return;
-    db.ref("fw_launches").push({xr:x/W,yr:y/HZ,type,uid,t:firebase.database.ServerValue.TIMESTAMP});
-    db.ref("fw_stats/total").transaction(v=>(v||0)+1);
+    if(!chan||!joined||viewOnly)return;
+    chan.send({type:"broadcast",event:"launch",payload:{xr:x/W,yr:y/HZ,type,uid}});
+    sb.rpc("fw_increment");
   }
   return {broadcast,incTotal(){},isLive:true};
 })();
