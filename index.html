@@ -571,8 +571,10 @@ let joined   = false;   // Presence に track 済み
 let sbClient = null, sbChan = null;
 let pendingTotal = 0;   // SDK ロード前に発生した発数
 
-// 累計カウンターのローカルキャッシュ（楽観的更新）
-let localTotal = parseInt(localStorage.getItem("fw_total") || "0");
+// 全ユーザー累計: Supabase取得後にセット。null = まだ未取得
+let globalTotal = null;
+// 楽観的加算分: RPC送信済みだがDB反映前の差分
+let optimDelta  = 0;
 
 const sTotalEl  = document.getElementById("sTotal");
 const sOnlineEl = document.getElementById("sOnline");
@@ -611,9 +613,14 @@ const sVisEl = document.getElementById("sVisitors");
 function setOnline(n){ sOnlineEl.textContent = n==null ? "—" : String(n); }
 function setVisitors(n){ sVisEl.textContent = n==null ? "—" : Number(n).toLocaleString(); }
 function setTotal(n){
-  localTotal = n;
-  localStorage.setItem("fw_total", n);
-  sTotalEl.textContent = n.toLocaleString();
+  // DB から来た値を正とする。楽観差分はリセット（DBが追いついた）
+  globalTotal = Number(n);
+  optimDelta  = 0;
+  sTotalEl.textContent = globalTotal.toLocaleString();
+}
+function renderTotal(){
+  if(globalTotal === null){ sTotalEl.textContent = "—"; return; }
+  sTotalEl.textContent = (globalTotal + optimDelta).toLocaleString();
 }
 
 // ── ソロ / ライブ 切り替え ──
@@ -634,8 +641,8 @@ soloBtn.addEventListener("click",  toggleSolo);
 
 // ── 発数をインクリメント（必ずここを通す） ──
 function incTotal(){
-  localTotal++;
-  setTotal(localTotal);
+  // 楽観的にUIを+1（globalTotal取得済みの場合のみ即時反映）
+  if(globalTotal !== null){ optimDelta++; renderTotal(); }
   if(!sbClient || soloMode){ return; }   // ソロ or SDK未ロード
   if(!joined){ pendingTotal++; return; } // まだ参加前
   sbClient.rpc("fw_increment");
@@ -722,7 +729,7 @@ if(SB_URL && SB_KEY){
   soloMode = true;
   setConnState("solo");
   setOnline(1);
-  setTotal(localTotal);
+  globalTotal = 0; renderTotal();
 }
 
 // ── ブロードキャスト ──
