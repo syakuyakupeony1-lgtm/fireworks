@@ -33,6 +33,18 @@
   #ui button:hover { background: rgba(255, 255, 255, 0.18); }
   #ui button.active { background: rgba(255, 180, 60, 0.3); border-color: rgba(255, 180, 60, 0.6); }
 
+  #ui select {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #eee;
+    padding: 8px 10px;
+    border-radius: 20px;
+    font-size: 14px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+  }
+  #ui select option { background: #1a1a2e; color: #eee; }
+
   #volWrap {
     display: flex;
     align-items: center;
@@ -66,6 +78,16 @@
 <div id="ui">
   <button id="muteBtn" title="サウンド ON/OFF">🔊 音あり</button>
   <button id="autoBtn" class="active" title="自動打ち上げ">🎆 自動</button>
+  <select id="typeSel" title="花火の種類">
+    <option value="random">🎲 おまかせ</option>
+    <option value="peony">牡丹</option>
+    <option value="chrys">菊(尾を引く)</option>
+    <option value="willow">柳(しだれ)</option>
+    <option value="ring">環(リング)</option>
+    <option value="heart">ハート</option>
+    <option value="senrin">千輪(二段開花)</option>
+    <option value="change">色変化</option>
+  </select>
   <div id="volWrap">
     <span style="color:#ccc;font-size:13px">音量</span>
     <input type="range" id="volume" min="0" max="100" value="70">
@@ -299,9 +321,12 @@ const rand = (a, b) => a + Math.random() * (b - a);
 
 const GRAVITY = 0.06; // 1フレーム(60fps基準)あたりの減速量
 
+const TYPE_KEYS = ["peony", "chrys", "willow", "ring", "heart", "senrin", "change"];
+
 /** 打ち上げ玉。クリック地点(targetX, targetY)でちょうど頂点に達して開花する */
 class Rocket {
-  constructor(targetX, targetY, scatter = 0) {
+  constructor(targetX, targetY, scatter = 0, type = "random") {
+    this.type = type === "random" ? TYPE_KEYS[(Math.random() * TYPE_KEYS.length) | 0] : type;
     this.x = targetX + rand(-scatter, scatter);
     this.y = H + 10;
     this.targetY = targetY;
@@ -338,20 +363,88 @@ class Rocket {
   explode() {
     this.stopWhistle();
     SoundEngine.boom(this.size);
-    SoundEngine.crackle(this.size);
+    if (this.type !== "willow") SoundEngine.crackle(this.size);
 
-    const count = Math.floor(70 + 60 * this.size);
-    const speed = (2.6 + 1.8 * this.size) * (H / 800);
     const [c1, c2] = this.colorSet;
-    for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
-      const v = speed * (0.55 + Math.random() * 0.45);
-      particles.push(new Particle(
-        this.x, this.y,
-        Math.cos(angle) * v, Math.sin(angle) * v,
-        Math.random() < 0.7 ? c1 : c2,
-        this.size
-      ));
+    const speed = (2.6 + 1.8 * this.size) * (H / 800);
+    const push = (vx, vy, color, opts) =>
+      particles.push(new Particle(this.x, this.y, vx, vy, color, this.size, opts));
+
+    switch (this.type) {
+      case "chrys": { // 菊: 一本一本が尾を引いて流れる
+        const count = Math.floor(80 + 60 * this.size);
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count + rand(-0.04, 0.04);
+          const v = speed * (0.6 + Math.random() * 0.4);
+          push(Math.cos(a) * v, Math.sin(a) * v, Math.random() < 0.7 ? c1 : c2,
+            { trail: true, drag: 0.98 });
+        }
+        break;
+      }
+      case "willow": { // 柳: 金色の火花がゆっくり垂れ下がる
+        const count = Math.floor(90 + 60 * this.size);
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count + rand(-0.1, 0.1);
+          const v = speed * 0.75 * (0.5 + Math.random() * 0.5);
+          push(Math.cos(a) * v, Math.sin(a) * v, Math.random() < 0.85 ? "#ffd180" : "#ffab40",
+            { trail: true, drag: 0.97, gravity: 0.022, decayMul: 0.45, twinkle: false });
+        }
+        break;
+      }
+      case "ring": { // 環: 傾いたリング状に広がる
+        const count = Math.floor(50 + 30 * this.size);
+        const tilt = rand(0.4, 1);       // 楕円の潰し = リングの傾き
+        const rot = rand(0, Math.PI);    // リング全体の回転
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count;
+          const ex = Math.cos(a) * speed, ey = Math.sin(a) * speed * tilt;
+          push(ex * Math.cos(rot) - ey * Math.sin(rot),
+               ex * Math.sin(rot) + ey * Math.cos(rot),
+               c1, { decayMul: 0.9 });
+        }
+        break;
+      }
+      case "heart": { // ハート型に開く
+        const count = Math.floor(60 + 30 * this.size);
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count;
+          // ハート曲線(媒介変数表示)を速度ベクトルに変換
+          const hx = 16 * Math.pow(Math.sin(a), 3);
+          const hy = -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
+          const v = (speed / 16) * rand(0.95, 1.05);
+          push(hx * v, hy * v, Math.random() < 0.8 ? "#ff4081" : "#ff80ab",
+            { drag: 0.99, gravity: 0.02, decayMul: 0.8 });
+        }
+        break;
+      }
+      case "senrin": { // 千輪: 大きめの星が飛び、消える瞬間にそれぞれ小さく開花
+        const count = Math.floor(14 + 8 * this.size);
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count + rand(-0.1, 0.1);
+          const v = speed * 0.8 * (0.6 + Math.random() * 0.4);
+          push(Math.cos(a) * v, Math.sin(a) * v, c1,
+            { child: true, decayMul: 1.3, r: 2.4, twinkle: false });
+        }
+        break;
+      }
+      case "change": { // 色変化: 開いた後、途中で別の色に切り替わる
+        const count = Math.floor(70 + 60 * this.size);
+        const alt = COLORS[(Math.random() * COLORS.length) | 0][0];
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
+          const v = speed * (0.55 + Math.random() * 0.45);
+          push(Math.cos(a) * v, Math.sin(a) * v, c1, { color2: alt, decayMul: 0.8 });
+        }
+        break;
+      }
+      default: { // 牡丹: 基本の球形
+        const count = Math.floor(70 + 60 * this.size);
+        for (let i = 0; i < count; i++) {
+          const a = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
+          const v = speed * (0.55 + Math.random() * 0.45);
+          push(Math.cos(a) * v, Math.sin(a) * v, Math.random() < 0.7 ? c1 : c2);
+        }
+      }
     }
     // 開花の閃光
     flashes.push({ x: this.x, y: this.y, r: 30 * this.size, life: 1 });
@@ -378,32 +471,76 @@ class Rocket {
   }
 }
 
-/** 開花後の火花 */
+/**
+ * 開花後の火花
+ * opts で種類ごとの挙動を変える:
+ *   trail    … 尾を引いて流れる(菊・柳)
+ *   gravity  … 落下の強さ(柳は弱めでゆっくり垂れる)
+ *   drag     … 空気抵抗
+ *   decayMul … 寿命の倍率(小さいほど長く光る)
+ *   color2   … 寿命の後半で切り替わる色(色変化)
+ *   child    … 消える瞬間に小さく二段開花する(千輪)
+ */
 class Particle {
-  constructor(x, y, vx, vy, color, size) {
+  constructor(x, y, vx, vy, color, size, opts = {}) {
     this.x = x; this.y = y;
     this.vx = vx; this.vy = vy;
     this.color = color;
+    this.color2 = opts.color2 || null;
     this.life = 1;
-    this.decay = rand(0.45, 0.85) / size;
-    this.r = rand(1.2, 2.4);
-    this.twinkle = Math.random() < 0.3;
+    this.decay = rand(0.45, 0.85) / size * (opts.decayMul || 1);
+    this.r = opts.r || rand(1.2, 2.4);
+    this.twinkle = opts.twinkle !== undefined ? opts.twinkle : Math.random() < 0.3;
+    this.drag = opts.drag || 0.985;
+    this.gravity = opts.gravity !== undefined ? opts.gravity : 0.035;
+    this.trail = opts.trail || false;
+    this.child = opts.child || false;
+    this.px = x; this.py = y;
   }
   update(dt) {
-    this.vx *= 0.985;
-    this.vy = this.vy * 0.985 + 0.035 * dt * 60; // 空気抵抗 + 重力
+    this.px = this.x; this.py = this.y;
+    this.vx *= this.drag;
+    this.vy = this.vy * this.drag + this.gravity * dt * 60; // 空気抵抗 + 重力
     this.x += this.vx * dt * 60;
     this.y += this.vy * dt * 60;
     this.life -= this.decay * dt;
-    return this.life > 0;
+    if (this.life <= 0) {
+      if (this.child) spawnMiniBurst(this.x, this.y, this.color);
+      return false;
+    }
+    return true;
   }
   draw() {
     const a = this.twinkle && Math.random() < 0.25 ? this.life * 0.3 : this.life;
     ctx2d.globalAlpha = Math.max(a, 0);
-    ctx2d.fillStyle = this.color;
-    ctx2d.beginPath();
-    ctx2d.arc(this.x, this.y, this.r * this.life, 0, Math.PI * 2);
-    ctx2d.fill();
+    const col = this.color2 && this.life < 0.55 ? this.color2 : this.color;
+    if (this.trail) {
+      // 前フレームの位置から線を引く。残像フェードと合わさって長い尾になる
+      ctx2d.strokeStyle = col;
+      ctx2d.lineWidth = Math.max(this.r * this.life, 0.3);
+      ctx2d.lineCap = "round";
+      ctx2d.beginPath();
+      ctx2d.moveTo(this.px, this.py);
+      ctx2d.lineTo(this.x, this.y);
+      ctx2d.stroke();
+    } else {
+      ctx2d.fillStyle = col;
+      ctx2d.beginPath();
+      ctx2d.arc(this.x, this.y, this.r * this.life, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+  }
+}
+
+/** 千輪用: 火花が消える瞬間の小さな二段開花 */
+function spawnMiniBurst(x, y, color) {
+  SoundEngine.crackle(0.5);
+  const n = 10;
+  for (let i = 0; i < n; i++) {
+    const a = (Math.PI * 2 * i) / n + rand(-0.2, 0.2);
+    const v = rand(0.8, 1.8) * (H / 800);
+    particles.push(new Particle(x, y, Math.cos(a) * v, Math.sin(a) * v, color, 0.6,
+      { decayMul: 1.4, twinkle: true, r: 1.4 }));
   }
 }
 
@@ -452,10 +589,11 @@ requestAnimationFrame(frame);
 
 /* ---------- 打ち上げ操作 ---------- */
 // クリック地点でぴったり開花。連打・マルチタッチで何発でも同時に上がる
-function launch(x, y, scatter = 0) {
+const typeSel = document.getElementById("typeSel");
+function launch(x, y, scatter = 0, type) {
   SoundEngine.unlock();
   const targetY = Math.min(Math.max(y, H * 0.08), H * 0.8);
-  rockets.push(new Rocket(x, targetY, scatter));
+  rockets.push(new Rocket(x, targetY, scatter, type || typeSel.value));
 }
 
 let hintShown = true;
@@ -478,7 +616,7 @@ setInterval(() => {
     // 自動モードは1〜3発をまとめて打ち上げ
     const burst = 1 + ((Math.random() * 3) | 0);
     for (let i = 0; i < burst; i++) {
-      setTimeout(() => launch(rand(W * 0.15, W * 0.85), rand(H * 0.15, H * 0.45), 30), i * rand(150, 400));
+      setTimeout(() => launch(rand(W * 0.15, W * 0.85), rand(H * 0.15, H * 0.45), 30, "random"), i * rand(150, 400));
     }
     autoTimer = rand(1.5, 4);
   }
