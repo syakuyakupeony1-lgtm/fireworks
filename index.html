@@ -3,139 +3,274 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>花火大会 - Fireworks</title>
+<title>花火</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; overflow: hidden; background: #050510; }
-  canvas { display: block; width: 100vw; height: 100vh; touch-action: manipulation; }
+:root {
+  --glass: rgba(255,255,255,0.08);
+  --glass-border: rgba(255,255,255,0.13);
+  --glass-hover: rgba(255,255,255,0.14);
+  --active-bg: rgba(255,214,80,0.18);
+  --active-border: rgba(255,214,80,0.55);
+  --active-color: #ffd650;
+  --radius-pill: 999px;
+  --radius-chip: 10px;
+  --blur: blur(24px) saturate(180%);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+}
 
-  #ui {
-    position: fixed;
-    top: 12px;
-    left: 12px;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
-    z-index: 10;
-  }
-  #ui button {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    color: #eee;
-    padding: 8px 14px;
-    border-radius: 20px;
-    font-size: 14px;
-    cursor: pointer;
-    backdrop-filter: blur(6px);
-    transition: background 0.2s;
-  }
-  #ui button:hover { background: rgba(255, 255, 255, 0.18); }
-  #ui button.active { background: rgba(255, 180, 60, 0.3); border-color: rgba(255, 180, 60, 0.6); }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; background: #07071a; }
+canvas { display: block; width: 100vw; height: 100vh; touch-action: manipulation; cursor: crosshair; }
 
-  #ui select {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    color: #eee;
-    padding: 8px 10px;
-    border-radius: 20px;
-    font-size: 14px;
-    cursor: pointer;
-    backdrop-filter: blur(6px);
-  }
-  #ui select option { background: #1a1a2e; color: #eee; }
+/* ─── Shot counter ─── */
+#counter {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.35);
+  pointer-events: none;
+  transition: color 0.4s;
+  z-index: 20;
+}
+#counter.pop {
+  color: rgba(255,214,80,0.9);
+  animation: counterPop 0.5s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes counterPop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
 
-  #volWrap {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 20px;
-    padding: 6px 12px;
-    backdrop-filter: blur(6px);
-  }
-  #volWrap input { width: 80px; accent-color: #ffb43c; }
+/* ─── Bottom bar ─── */
+#bar {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
 
-  #hint {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255, 255, 255, 0.6);
-    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
-    font-size: 14px;
-    pointer-events: none;
-    transition: opacity 1s;
-    text-shadow: 0 1px 4px #000;
-  }
-  #hint.hidden { opacity: 0; }
+/* 種類チップ列 */
+#chips {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--glass);
+  border: 0.5px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+.chip {
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.6);
+  background: transparent;
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-chip);
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+  white-space: nowrap;
+  user-select: none;
+}
+.chip:hover { color: rgba(255,255,255,0.9); background: var(--glass-hover); }
+.chip.active {
+  color: var(--active-color);
+  background: var(--active-bg);
+  border-color: var(--active-border);
+}
+
+/* コントロール行 */
+#controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--glass);
+  border: 0.5px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+
+.ctrl-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0.5px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  color: rgba(255,255,255,0.7);
+}
+.ctrl-btn:hover { background: var(--glass-hover); }
+.ctrl-btn.active {
+  background: var(--active-bg);
+  border-color: var(--active-border);
+  color: var(--active-color);
+}
+.ctrl-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+.divider {
+  width: 0.5px;
+  height: 22px;
+  background: rgba(255,255,255,0.12);
+}
+
+#volSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 72px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.2);
+  outline: none;
+  cursor: pointer;
+}
+#volSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+#volSlider::-moz-range-thumb {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  border: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+
+/* ─── ヒント ─── */
+#hint {
+  position: fixed;
+  bottom: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.35);
+  pointer-events: none;
+  white-space: nowrap;
+  transition: opacity 1.2s;
+}
+#hint.gone { opacity: 0; }
+
+/* ─── マイルストーン演出 ─── */
+#milestone {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 30;
+  opacity: 0;
+}
+#milestone.show { animation: msFade 3s cubic-bezier(0.22,1,0.36,1) forwards; }
+@keyframes msFade {
+  0%   { opacity: 0; transform: scale(0.82); }
+  15%  { opacity: 1; transform: scale(1); }
+  65%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.06); }
+}
+#ms-number {
+  font-family: var(--font-display);
+  font-size: clamp(80px, 18vw, 160px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  background: linear-gradient(145deg, #fff 20%, #ffd650 60%, #ff9d00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 40px rgba(255,200,60,0.5));
+}
+#ms-label {
+  margin-top: 8px;
+  font-family: var(--font);
+  font-size: clamp(14px, 3vw, 20px);
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.55);
+}
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
 
-<div id="ui">
-  <button id="muteBtn" title="サウンド ON/OFF">🔊 音あり</button>
-  <button id="autoBtn" class="active" title="自動打ち上げ">🎆 自動</button>
-  <select id="typeSel" title="花火の種類">
-    <option value="random">🎲 おまかせ</option>
-    <option value="peony">牡丹</option>
-    <option value="chrys">菊(尾を引く)</option>
-    <option value="willow">柳(しだれ)</option>
-    <option value="ring">環(リング)</option>
-    <option value="heart">ハート</option>
-    <option value="senrin">千輪(二段開花)</option>
-    <option value="change">色変化</option>
-  </select>
-  <div id="volWrap">
-    <span style="color:#ccc;font-size:13px">音量</span>
-    <input type="range" id="volume" min="0" max="100" value="70">
+<div id="counter">0 発</div>
+
+<div id="bar">
+  <div id="chips"></div>
+  <div id="controls">
+    <!-- ミュートボタン -->
+    <button class="ctrl-btn active" id="muteBtn" title="サウンド">
+      <svg id="soundIcon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+    </button>
+    <div class="divider"></div>
+    <!-- 音量 -->
+    <input type="range" id="volSlider" min="0" max="100" value="70">
+    <div class="divider"></div>
+    <!-- 自動打ち上げ -->
+    <button class="ctrl-btn active" id="autoBtn" title="自動打ち上げ">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+    </button>
   </div>
 </div>
 
-<div id="hint">タップ / クリックした場所に花火が打ち上がります(連打・複数指OK)</div>
+<div id="hint">タップした場所に打ち上がります</div>
+
+<div id="milestone">
+  <div id="ms-number">50</div>
+  <div id="ms-label">SHOTS</div>
+</div>
 
 <script>
 "use strict";
 
 /* ============================================================
- * サウンドエンジン（Web Audio API・全合成、音声ファイル不要）
- *  - whistle(): 打ち上げの「ヒューーー」（上昇中ずっと鳴る）
- *  - boom():    開花の「ドンッ」（重低音 + 破裂ノイズ + 余韻）
+ * Sound Engine — Web Audio API合成
  * ============================================================ */
 const SoundEngine = (() => {
-  let ctx = null;
-  let master = null;
-  let muted = false;
-  let volume = 0.7;
+  let ctx = null, master = null, noiseBuf = null;
+  let muted = false, volume = 0.7;
 
   function ensureCtx() {
     if (!ctx) {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       master = ctx.createGain();
       master.gain.value = muted ? 0 : volume;
-      // 過大入力で音割れしないようにリミッターを挟む
-      const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = -10;
-      limiter.knee.value = 6;
-      limiter.ratio.value = 12;
-      limiter.attack.value = 0.002;
-      limiter.release.value = 0.25;
-      master.connect(limiter);
-      limiter.connect(ctx.destination);
+      const lim = ctx.createDynamicsCompressor();
+      lim.threshold.value = -10; lim.knee.value = 6;
+      lim.ratio.value = 12; lim.attack.value = 0.002; lim.release.value = 0.25;
+      master.connect(lim); lim.connect(ctx.destination);
     }
     if (ctx.state === "suspended") ctx.resume();
     return ctx;
   }
-
   function applyGain() {
     if (master) master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.02);
   }
-
-  // ホワイトノイズバッファ(使い回し)
-  let noiseBuf = null;
-  function getNoiseBuf() {
+  function noise() {
     if (!noiseBuf) {
       const len = ctx.sampleRate * 2;
       noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -145,141 +280,80 @@ const SoundEngine = (() => {
     return noiseBuf;
   }
 
-  /**
-   * 打ち上げ音「ヒューーー」
-   * 高めの笛音がゆっくり下がりつつビブラートがかかる + かすかな風切りノイズ。
-   * duration: 上昇にかかる秒数(玉の飛翔時間と同期させる)
-   * 戻り値: 途中で止めるための stop 関数
-   */
   function whistle(duration) {
     if (muted) return () => {};
-    const ac = ensureCtx();
-    const t0 = ac.currentTime;
-
-    // --- 笛のトーン(三角波を下降グライド) ---
-    const osc = ac.createOscillator();
-    osc.type = "triangle";
+    const ac = ensureCtx(), t0 = ac.currentTime;
+    const osc = ac.createOscillator(); osc.type = "triangle";
     osc.frequency.setValueAtTime(2200, t0);
     osc.frequency.exponentialRampToValueAtTime(600, t0 + duration);
-
-    // ビブラート(ヒュルヒュル感)
-    const vib = ac.createOscillator();
-    vib.type = "sine";
-    vib.frequency.setValueAtTime(18, t0);
-    vib.frequency.linearRampToValueAtTime(9, t0 + duration);
-    const vibGain = ac.createGain();
-    vibGain.gain.value = 60;
-    vib.connect(vibGain);
-    vibGain.connect(osc.frequency);
-
-    const oscGain = ac.createGain();
-    oscGain.gain.setValueAtTime(0.0001, t0);
-    oscGain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.15);
-    oscGain.gain.setValueAtTime(0.12, t0 + duration * 0.7);
-    oscGain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-
-    // --- 風切りノイズ(シューという空気感) ---
-    const noise = ac.createBufferSource();
-    noise.buffer = getNoiseBuf();
-    noise.loop = true;
-    const bp = ac.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.Q.value = 1.5;
-    bp.frequency.setValueAtTime(3000, t0);
-    bp.frequency.exponentialRampToValueAtTime(900, t0 + duration);
-    const noiseGain = ac.createGain();
-    noiseGain.gain.setValueAtTime(0.0001, t0);
-    noiseGain.gain.exponentialRampToValueAtTime(0.05, t0 + 0.2);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-
-    osc.connect(oscGain); oscGain.connect(master);
-    noise.connect(bp); bp.connect(noiseGain); noiseGain.connect(master);
-
-    osc.start(t0); vib.start(t0); noise.start(t0);
-    const tEnd = t0 + duration + 0.1;
-    osc.stop(tEnd); vib.stop(tEnd); noise.stop(tEnd);
-
-    return function stopEarly() {
-      const now = ac.currentTime;
-      oscGain.gain.cancelScheduledValues(now);
-      noiseGain.gain.cancelScheduledValues(now);
-      oscGain.gain.setTargetAtTime(0.0001, now, 0.03);
-      noiseGain.gain.setTargetAtTime(0.0001, now, 0.03);
+    const vib = ac.createOscillator(); vib.type = "sine";
+    vib.frequency.setValueAtTime(18, t0); vib.frequency.linearRampToValueAtTime(9, t0 + duration);
+    const vibG = ac.createGain(); vibG.gain.value = 60;
+    vib.connect(vibG); vibG.connect(osc.frequency);
+    const oscG = ac.createGain();
+    oscG.gain.setValueAtTime(0.0001, t0);
+    oscG.gain.exponentialRampToValueAtTime(0.12, t0 + 0.15);
+    oscG.gain.setValueAtTime(0.12, t0 + duration * 0.7);
+    oscG.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    const ns = ac.createBufferSource(); ns.buffer = noise(); ns.loop = true;
+    const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.5;
+    bp.frequency.setValueAtTime(3000, t0); bp.frequency.exponentialRampToValueAtTime(900, t0 + duration);
+    const nsG = ac.createGain();
+    nsG.gain.setValueAtTime(0.0001, t0);
+    nsG.gain.exponentialRampToValueAtTime(0.05, t0 + 0.2);
+    nsG.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(oscG); oscG.connect(master);
+    ns.connect(bp); bp.connect(nsG); nsG.connect(master);
+    osc.start(t0); vib.start(t0); ns.start(t0);
+    osc.stop(t0 + duration + 0.1); vib.stop(t0 + duration + 0.1); ns.stop(t0 + duration + 0.1);
+    return () => {
+      const n = ac.currentTime;
+      oscG.gain.cancelScheduledValues(n); nsG.gain.cancelScheduledValues(n);
+      oscG.gain.setTargetAtTime(0.0001, n, 0.03); nsG.gain.setTargetAtTime(0.0001, n, 0.03);
     };
   }
 
-  /**
-   * 開花音「ドンッ」
-   * 重低音のサイン波(胸に響くドン) + 破裂ノイズ(バリッ) + 低域の余韻(ゴロゴロ)。
-   * size: 0.5〜1.5 程度。玉の大きさで音の迫力を変える。
-   */
   function boom(size = 1) {
     if (muted) return;
-    const ac = ensureCtx();
-    const t0 = ac.currentTime;
-
-    // --- 重低音「ドン」 ---
-    const sub = ac.createOscillator();
-    sub.type = "sine";
+    const ac = ensureCtx(), t0 = ac.currentTime;
+    const sub = ac.createOscillator(); sub.type = "sine";
     sub.frequency.setValueAtTime(120 / size, t0);
     sub.frequency.exponentialRampToValueAtTime(35, t0 + 0.4 * size);
-    const subGain = ac.createGain();
-    subGain.gain.setValueAtTime(0.9 * size, t0);
-    subGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9 * size);
-    sub.connect(subGain); subGain.connect(master);
-    sub.start(t0); sub.stop(t0 + 1.0 * size);
-
-    // --- 破裂ノイズ「バリッ」 ---
-    const burst = ac.createBufferSource();
-    burst.buffer = getNoiseBuf();
-    const lp = ac.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.setValueAtTime(6000, t0);
-    lp.frequency.exponentialRampToValueAtTime(150, t0 + 0.7 * size);
-    const burstGain = ac.createGain();
-    burstGain.gain.setValueAtTime(0.7 * size, t0);
-    burstGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8 * size);
-    burst.connect(lp); lp.connect(burstGain); burstGain.connect(master);
-    burst.start(t0); burst.stop(t0 + 1.0 * size);
-
-    // --- 余韻(遠雷のようなゴロゴロ) ---
-    const rumble = ac.createBufferSource();
-    rumble.buffer = getNoiseBuf();
-    rumble.loop = true;
-    const rumbleLp = ac.createBiquadFilter();
-    rumbleLp.type = "lowpass";
-    rumbleLp.frequency.value = 120;
-    const rumbleGain = ac.createGain();
-    rumbleGain.gain.setValueAtTime(0.0001, t0);
-    rumbleGain.gain.exponentialRampToValueAtTime(0.25 * size, t0 + 0.08);
-    rumbleGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8 * size);
-    rumble.connect(rumbleLp); rumbleLp.connect(rumbleGain); rumbleGain.connect(master);
-    rumble.start(t0); rumble.stop(t0 + 2.0 * size);
+    const subG = ac.createGain();
+    subG.gain.setValueAtTime(0.9 * size, t0);
+    subG.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9 * size);
+    sub.connect(subG); subG.connect(master); sub.start(t0); sub.stop(t0 + size);
+    const burst = ac.createBufferSource(); burst.buffer = noise();
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass";
+    lp.frequency.setValueAtTime(6000, t0); lp.frequency.exponentialRampToValueAtTime(150, t0 + 0.7 * size);
+    const bG = ac.createGain();
+    bG.gain.setValueAtTime(0.7 * size, t0); bG.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8 * size);
+    burst.connect(lp); lp.connect(bG); bG.connect(master); burst.start(t0); burst.stop(t0 + size);
+    const rumble = ac.createBufferSource(); rumble.buffer = noise(); rumble.loop = true;
+    const rlp = ac.createBiquadFilter(); rlp.type = "lowpass"; rlp.frequency.value = 120;
+    const rG = ac.createGain();
+    rG.gain.setValueAtTime(0.0001, t0);
+    rG.gain.exponentialRampToValueAtTime(0.25 * size, t0 + 0.08);
+    rG.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8 * size);
+    rumble.connect(rlp); rlp.connect(rG); rG.connect(master); rumble.start(t0); rumble.stop(t0 + 2 * size);
   }
 
-  /** パチパチという火花の弾け音(開花後の余韻) */
   function crackle(size = 1) {
     if (muted) return;
     const ac = ensureCtx();
     const count = Math.floor(6 + Math.random() * 8 * size);
     for (let i = 0; i < count; i++) {
       const t = ac.currentTime + 0.15 + Math.random() * 1.2 * size;
-      const pop = ac.createBufferSource();
-      pop.buffer = getNoiseBuf();
-      const hp = ac.createBiquadFilter();
-      hp.type = "highpass";
-      hp.frequency.value = 3000 + Math.random() * 4000;
+      const pop = ac.createBufferSource(); pop.buffer = noise();
+      const hp = ac.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 3000 + Math.random() * 4000;
       const g = ac.createGain();
-      g.gain.setValueAtTime(0.05 + Math.random() * 0.06, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-      pop.connect(hp); hp.connect(g); g.connect(master);
-      pop.start(t); pop.stop(t + 0.06);
+      g.gain.setValueAtTime(0.05 + Math.random() * 0.06, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      pop.connect(hp); hp.connect(g); g.connect(master); pop.start(t); pop.stop(t + 0.06);
     }
   }
 
   return {
-    unlock: ensureCtx,
-    whistle, boom, crackle,
+    unlock: ensureCtx, whistle, boom, crackle,
     setMuted(m) { muted = m; if (ctx) applyGain(); },
     setVolume(v) { volume = v; if (ctx) applyGain(); },
     get muted() { return muted; },
@@ -287,206 +361,34 @@ const SoundEngine = (() => {
 })();
 
 /* ============================================================
- * 花火エンジン(Canvas 2D)
+ * Canvas
  * ============================================================ */
 const canvas = document.getElementById("canvas");
 const ctx2d = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
-
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * DPR;
-  canvas.height = H * DPR;
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
   ctx2d.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
-window.addEventListener("resize", resize);
-resize();
+window.addEventListener("resize", resize); resize();
 
 const COLORS = [
-  ["#ff5252", "#ffd180"], // 赤金
-  ["#69f0ae", "#b9f6ca"], // 緑
-  ["#40c4ff", "#80d8ff"], // 青
-  ["#ffd740", "#ffff8d"], // 金
-  ["#ff4081", "#ff80ab"], // ピンク
-  ["#e040fb", "#ea80fc"], // 紫
-  ["#ffffff", "#b3e5fc"], // 白銀
+  ["#ff5252","#ffd180"],["#69f0ae","#b9f6ca"],["#40c4ff","#80d8ff"],
+  ["#ffd740","#ffff8d"],["#ff4081","#ff80ab"],["#e040fb","#ea80fc"],["#fff","#b3e5fc"],
 ];
-
-const rockets = [];   // 上昇中の玉
-const particles = []; // 開花後の火花
-
 const rand = (a, b) => a + Math.random() * (b - a);
+const rockets = [], particles = [], flashes = [];
+const GRAVITY = 0.06;
+const TYPE_KEYS = ["peony","chrys","willow","ring","heart","senrin","change"];
 
-const GRAVITY = 0.06; // 1フレーム(60fps基準)あたりの減速量
-
-const TYPE_KEYS = ["peony", "chrys", "willow", "ring", "heart", "senrin", "change"];
-
-/** 打ち上げ玉。クリック地点(targetX, targetY)でちょうど頂点に達して開花する */
-class Rocket {
-  constructor(targetX, targetY, scatter = 0, type = "random") {
-    this.type = type === "random" ? TYPE_KEYS[(Math.random() * TYPE_KEYS.length) | 0] : type;
-    this.x = targetX + rand(-scatter, scatter);
-    this.y = H + 10;
-    this.targetY = targetY;
-    this.size = rand(0.7, 1.4); // 玉の大きさ → 開花規模と音量に反映
-    // 頂点がちょうど targetY になる初速を逆算: v = √(2g·h)
-    const h = this.y - this.targetY;
-    this.vy = -Math.sqrt(2 * GRAVITY * h);
-    this.vx = 0;
-    this.colorSet = COLORS[(Math.random() * COLORS.length) | 0];
-    this.trail = [];
-    this.flightTime = (-this.vy / GRAVITY) / 60; // 到達時間(秒)。ヒュー音の長さと同期
-    this.stopWhistle = SoundEngine.whistle(this.flightTime);
-    this.age = 0;
-  }
-
-  update(dt) {
-    this.age += dt;
-    this.trail.push({ x: this.x, y: this.y, life: 1 });
-    if (this.trail.length > 18) this.trail.shift();
-    for (const t of this.trail) t.life -= dt * 3;
-
-    this.vy += GRAVITY * dt * 60;  // 重力で減速
-    this.x += this.vx * dt * 60;
-    this.y += this.vy * dt * 60;
-
-    // クリックした高さ(頂点)に達したら開花
-    if (this.y <= this.targetY || this.vy >= -0.3) {
-      this.explode();
-      return false;
-    }
-    return true;
-  }
-
-  explode() {
-    this.stopWhistle();
-    SoundEngine.boom(this.size);
-    if (this.type !== "willow") SoundEngine.crackle(this.size);
-
-    const [c1, c2] = this.colorSet;
-    const speed = (2.6 + 1.8 * this.size) * (H / 800);
-    const push = (vx, vy, color, opts) =>
-      particles.push(new Particle(this.x, this.y, vx, vy, color, this.size, opts));
-
-    switch (this.type) {
-      case "chrys": { // 菊: 一本一本が尾を引いて流れる
-        const count = Math.floor(80 + 60 * this.size);
-        for (let i = 0; i < count; i++) {
-          const a = (Math.PI * 2 * i) / count + rand(-0.04, 0.04);
-          const v = speed * (0.6 + Math.random() * 0.4);
-          push(Math.cos(a) * v, Math.sin(a) * v, Math.random() < 0.7 ? c1 : c2,
-            { trail: true, drag: 0.98 });
-        }
-        break;
-      }
-      case "willow": { // 柳: 金色の火花がゆっくり垂れ下がる
-        const count = Math.floor(90 + 60 * this.size);
-        for (let i = 0; i < count; i++) {
-          const a = (Math.PI * 2 * i) / count + rand(-0.1, 0.1);
-          const v = speed * 0.75 * (0.5 + Math.random() * 0.5);
-          push(Math.cos(a) * v, Math.sin(a) * v, Math.random() < 0.85 ? "#ffd180" : "#ffab40",
-            { trail: true, drag: 0.97, gravity: 0.022, decayMul: 0.45, twinkle: false });
-        }
-        break;
-      }
-      case "ring": { // 環: 傾いたリング状に広がる
-        const count = Math.floor(50 + 30 * this.size);
-        const tilt = rand(0.4, 1);       // 楕円の潰し = リングの傾き
-        const rot = rand(0, Math.PI);    // リング全体の回転
-        for (let i = 0; i < count; i++) {
-          const a = (Math.PI * 2 * i) / count;
-          const ex = Math.cos(a) * speed, ey = Math.sin(a) * speed * tilt;
-          push(ex * Math.cos(rot) - ey * Math.sin(rot),
-               ex * Math.sin(rot) + ey * Math.cos(rot),
-               c1, { decayMul: 0.9 });
-        }
-        break;
-      }
-      case "heart": { // ハート型に開く
-        const count = Math.floor(60 + 30 * this.size);
-        for (let i = 0; i < count; i++) {
-          const a = (Math.PI * 2 * i) / count;
-          // ハート曲線(媒介変数表示)を速度ベクトルに変換
-          const hx = 16 * Math.pow(Math.sin(a), 3);
-          const hy = -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
-          const v = (speed / 16) * rand(0.95, 1.05);
-          push(hx * v, hy * v, Math.random() < 0.8 ? "#ff4081" : "#ff80ab",
-            { drag: 0.99, gravity: 0.02, decayMul: 0.8 });
-        }
-        break;
-      }
-      case "senrin": { // 千輪: 大きめの星が飛び、消える瞬間にそれぞれ小さく開花
-        const count = Math.floor(14 + 8 * this.size);
-        for (let i = 0; i < count; i++) {
-          const a = (Math.PI * 2 * i) / count + rand(-0.1, 0.1);
-          const v = speed * 0.8 * (0.6 + Math.random() * 0.4);
-          push(Math.cos(a) * v, Math.sin(a) * v, c1,
-            { child: true, decayMul: 1.3, r: 2.4, twinkle: false });
-        }
-        break;
-      }
-      case "change": { // 色変化: 開いた後、途中で別の色に切り替わる
-        const count = Math.floor(70 + 60 * this.size);
-        const alt = COLORS[(Math.random() * COLORS.length) | 0][0];
-        for (let i = 0; i < count; i++) {
-          const a = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
-          const v = speed * (0.55 + Math.random() * 0.45);
-          push(Math.cos(a) * v, Math.sin(a) * v, c1, { color2: alt, decayMul: 0.8 });
-        }
-        break;
-      }
-      default: { // 牡丹: 基本の球形
-        const count = Math.floor(70 + 60 * this.size);
-        for (let i = 0; i < count; i++) {
-          const a = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
-          const v = speed * (0.55 + Math.random() * 0.45);
-          push(Math.cos(a) * v, Math.sin(a) * v, Math.random() < 0.7 ? c1 : c2);
-        }
-      }
-    }
-    // 開花の閃光
-    flashes.push({ x: this.x, y: this.y, r: 30 * this.size, life: 1 });
-  }
-
-  draw() {
-    // 軌跡(尾)
-    for (let i = 0; i < this.trail.length; i++) {
-      const t = this.trail[i];
-      if (t.life <= 0) continue;
-      ctx2d.globalAlpha = t.life * 0.5;
-      ctx2d.fillStyle = "#ffcf8a";
-      const r = 1.2 * (i / this.trail.length) + 0.4;
-      ctx2d.beginPath();
-      ctx2d.arc(t.x, t.y, r, 0, Math.PI * 2);
-      ctx2d.fill();
-    }
-    // 玉本体
-    ctx2d.globalAlpha = 1;
-    ctx2d.fillStyle = "#fff4d6";
-    ctx2d.beginPath();
-    ctx2d.arc(this.x, this.y, 2.2, 0, Math.PI * 2);
-    ctx2d.fill();
-  }
-}
-
-/**
- * 開花後の火花
- * opts で種類ごとの挙動を変える:
- *   trail    … 尾を引いて流れる(菊・柳)
- *   gravity  … 落下の強さ(柳は弱めでゆっくり垂れる)
- *   drag     … 空気抵抗
- *   decayMul … 寿命の倍率(小さいほど長く光る)
- *   color2   … 寿命の後半で切り替わる色(色変化)
- *   child    … 消える瞬間に小さく二段開花する(千輪)
- */
+/* ── Particle ── */
 class Particle {
   constructor(x, y, vx, vy, color, size, opts = {}) {
-    this.x = x; this.y = y;
+    this.x = x; this.y = y; this.px = x; this.py = y;
     this.vx = vx; this.vy = vy;
-    this.color = color;
-    this.color2 = opts.color2 || null;
+    this.color = color; this.color2 = opts.color2 || null;
     this.life = 1;
     this.decay = rand(0.45, 0.85) / size * (opts.decayMul || 1);
     this.r = opts.r || rand(1.2, 2.4);
@@ -495,19 +397,14 @@ class Particle {
     this.gravity = opts.gravity !== undefined ? opts.gravity : 0.035;
     this.trail = opts.trail || false;
     this.child = opts.child || false;
-    this.px = x; this.py = y;
   }
   update(dt) {
     this.px = this.x; this.py = this.y;
     this.vx *= this.drag;
-    this.vy = this.vy * this.drag + this.gravity * dt * 60; // 空気抵抗 + 重力
-    this.x += this.vx * dt * 60;
-    this.y += this.vy * dt * 60;
+    this.vy = this.vy * this.drag + this.gravity * dt * 60;
+    this.x += this.vx * dt * 60; this.y += this.vy * dt * 60;
     this.life -= this.decay * dt;
-    if (this.life <= 0) {
-      if (this.child) spawnMiniBurst(this.x, this.y, this.color);
-      return false;
-    }
+    if (this.life <= 0) { if (this.child) miniBurst(this.x, this.y, this.color); return false; }
     return true;
   }
   draw() {
@@ -515,119 +412,253 @@ class Particle {
     ctx2d.globalAlpha = Math.max(a, 0);
     const col = this.color2 && this.life < 0.55 ? this.color2 : this.color;
     if (this.trail) {
-      // 前フレームの位置から線を引く。残像フェードと合わさって長い尾になる
-      ctx2d.strokeStyle = col;
-      ctx2d.lineWidth = Math.max(this.r * this.life, 0.3);
-      ctx2d.lineCap = "round";
-      ctx2d.beginPath();
-      ctx2d.moveTo(this.px, this.py);
-      ctx2d.lineTo(this.x, this.y);
-      ctx2d.stroke();
+      ctx2d.strokeStyle = col; ctx2d.lineWidth = Math.max(this.r * this.life, 0.3); ctx2d.lineCap = "round";
+      ctx2d.beginPath(); ctx2d.moveTo(this.px, this.py); ctx2d.lineTo(this.x, this.y); ctx2d.stroke();
     } else {
-      ctx2d.fillStyle = col;
-      ctx2d.beginPath();
-      ctx2d.arc(this.x, this.y, this.r * this.life, 0, Math.PI * 2);
-      ctx2d.fill();
+      ctx2d.fillStyle = col; ctx2d.beginPath(); ctx2d.arc(this.x, this.y, this.r * this.life, 0, Math.PI * 2); ctx2d.fill();
     }
   }
 }
 
-/** 千輪用: 火花が消える瞬間の小さな二段開花 */
-function spawnMiniBurst(x, y, color) {
+function miniBurst(x, y, color) {
   SoundEngine.crackle(0.5);
-  const n = 10;
-  for (let i = 0; i < n; i++) {
-    const a = (Math.PI * 2 * i) / n + rand(-0.2, 0.2);
+  for (let i = 0; i < 10; i++) {
+    const a = (Math.PI * 2 * i) / 10 + rand(-0.2, 0.2);
     const v = rand(0.8, 1.8) * (H / 800);
-    particles.push(new Particle(x, y, Math.cos(a) * v, Math.sin(a) * v, color, 0.6,
-      { decayMul: 1.4, twinkle: true, r: 1.4 }));
+    particles.push(new Particle(x, y, Math.cos(a)*v, Math.sin(a)*v, color, 0.6, { decayMul:1.4, twinkle:true, r:1.4 }));
   }
 }
 
-const flashes = []; // 開花時の閃光
+/* ── Rocket ── */
+class Rocket {
+  constructor(tx, ty, scatter = 0, type = "random") {
+    this.type = type === "random" ? TYPE_KEYS[(Math.random() * TYPE_KEYS.length)|0] : type;
+    this.x = tx + rand(-scatter, scatter); this.y = H + 10;
+    this.targetY = ty;
+    this.size = rand(0.7, 1.4);
+    const h = this.y - this.targetY;
+    this.vy = -Math.sqrt(2 * GRAVITY * h); this.vx = 0;
+    this.colorSet = COLORS[(Math.random() * COLORS.length)|0];
+    this.trail = [];
+    this.flightTime = (-this.vy / GRAVITY) / 60;
+    this.stopWhistle = SoundEngine.whistle(this.flightTime);
+  }
+  update(dt) {
+    this.trail.push({ x: this.x, y: this.y, life: 1 });
+    if (this.trail.length > 18) this.trail.shift();
+    for (const t of this.trail) t.life -= dt * 3;
+    this.vy += GRAVITY * dt * 60; this.x += this.vx * dt * 60; this.y += this.vy * dt * 60;
+    if (this.y <= this.targetY || this.vy >= -0.3) { this.explode(); return false; }
+    return true;
+  }
+  explode() {
+    this.stopWhistle(); SoundEngine.boom(this.size);
+    if (this.type !== "willow") SoundEngine.crackle(this.size);
+    const [c1, c2] = this.colorSet;
+    const spd = (2.6 + 1.8 * this.size) * (H / 800);
+    const push = (vx, vy, col, opts) => particles.push(new Particle(this.x, this.y, vx, vy, col, this.size, opts));
+    switch (this.type) {
+      case "chrys": {
+        const n = Math.floor(80 + 60 * this.size);
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI*2*i)/n + rand(-0.04,0.04), v = spd*(0.6+Math.random()*0.4);
+          push(Math.cos(a)*v, Math.sin(a)*v, Math.random()<0.7?c1:c2, { trail:true, drag:0.98 });
+        } break;
+      }
+      case "willow": {
+        const n = Math.floor(90 + 60 * this.size);
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI*2*i)/n + rand(-0.1,0.1), v = spd*0.75*(0.5+Math.random()*0.5);
+          push(Math.cos(a)*v, Math.sin(a)*v, Math.random()<0.85?"#ffd180":"#ffab40",
+            { trail:true, drag:0.97, gravity:0.022, decayMul:0.45, twinkle:false });
+        } break;
+      }
+      case "ring": {
+        const n = Math.floor(50 + 30 * this.size), tilt = rand(0.4,1), rot = rand(0,Math.PI);
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI*2*i)/n;
+          const ex = Math.cos(a)*spd, ey = Math.sin(a)*spd*tilt;
+          push(ex*Math.cos(rot)-ey*Math.sin(rot), ex*Math.sin(rot)+ey*Math.cos(rot), c1, { decayMul:0.9 });
+        } break;
+      }
+      case "heart": {
+        const n = Math.floor(60 + 30 * this.size);
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI*2*i)/n;
+          const hx = 16*Math.pow(Math.sin(a),3);
+          const hy = -(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a));
+          push(hx*(spd/16)*rand(0.95,1.05), hy*(spd/16)*rand(0.95,1.05), Math.random()<0.8?"#ff4081":"#ff80ab",
+            { drag:0.99, gravity:0.02, decayMul:0.8 });
+        } break;
+      }
+      case "senrin": {
+        const n = Math.floor(14 + 8 * this.size);
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI*2*i)/n + rand(-0.1,0.1), v = spd*0.8*(0.6+Math.random()*0.4);
+          push(Math.cos(a)*v, Math.sin(a)*v, c1, { child:true, decayMul:1.3, r:2.4, twinkle:false });
+        } break;
+      }
+      case "change": {
+        const n = Math.floor(70 + 60 * this.size);
+        const alt = COLORS[(Math.random()*COLORS.length)|0][0];
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI*2*i)/n + rand(-0.05,0.05), v = spd*(0.55+Math.random()*0.45);
+          push(Math.cos(a)*v, Math.sin(a)*v, c1, { color2:alt, decayMul:0.8 });
+        } break;
+      }
+      default: {
+        const n = Math.floor(70 + 60 * this.size);
+        for (let i = 0; i < n; i++) {
+          const a = (Math.PI*2*i)/n + rand(-0.05,0.05), v = spd*(0.55+Math.random()*0.45);
+          push(Math.cos(a)*v, Math.sin(a)*v, Math.random()<0.7?c1:c2, {});
+        }
+      }
+    }
+    flashes.push({ x: this.x, y: this.y, r: 30 * this.size, life: 1 });
+  }
+  draw() {
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i]; if (t.life <= 0) continue;
+      ctx2d.globalAlpha = t.life * 0.5; ctx2d.fillStyle = "#ffcf8a";
+      const r = 1.2*(i/this.trail.length)+0.4;
+      ctx2d.beginPath(); ctx2d.arc(t.x, t.y, r, 0, Math.PI*2); ctx2d.fill();
+    }
+    ctx2d.globalAlpha = 1; ctx2d.fillStyle = "#fff4d6";
+    ctx2d.beginPath(); ctx2d.arc(this.x, this.y, 2.2, 0, Math.PI*2); ctx2d.fill();
+  }
+}
 
-/* ---------- メインループ ---------- */
+/* ── Main loop ── */
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
-  last = now;
-
-  // 残像を残しつつフェード(花火の尾を引く描画)
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
   ctx2d.globalCompositeOperation = "destination-out";
   ctx2d.globalAlpha = 1;
   ctx2d.fillStyle = "rgba(0,0,0,0.22)";
   ctx2d.fillRect(0, 0, W, H);
   ctx2d.globalCompositeOperation = "lighter";
-
-  for (let i = rockets.length - 1; i >= 0; i--) {
-    if (!rockets[i].update(dt)) rockets.splice(i, 1);
-    else rockets[i].draw();
+  for (let i = rockets.length-1; i >= 0; i--) { if (!rockets[i].update(dt)) rockets.splice(i,1); else rockets[i].draw(); }
+  for (let i = particles.length-1; i >= 0; i--) { if (!particles[i].update(dt)) particles.splice(i,1); else particles[i].draw(); }
+  for (let i = flashes.length-1; i >= 0; i--) {
+    const f = flashes[i]; f.life -= dt*5;
+    if (f.life <= 0) { flashes.splice(i,1); continue; }
+    ctx2d.globalAlpha = f.life*0.6;
+    const g = ctx2d.createRadialGradient(f.x,f.y,0, f.x,f.y, f.r*(2-f.life));
+    g.addColorStop(0,"rgba(255,255,255,0.9)"); g.addColorStop(1,"rgba(255,255,255,0)");
+    ctx2d.fillStyle = g; ctx2d.beginPath(); ctx2d.arc(f.x,f.y, f.r*(2-f.life), 0, Math.PI*2); ctx2d.fill();
   }
-  for (let i = particles.length - 1; i >= 0; i--) {
-    if (!particles[i].update(dt)) particles.splice(i, 1);
-    else particles[i].draw();
-  }
-  for (let i = flashes.length - 1; i >= 0; i--) {
-    const f = flashes[i];
-    f.life -= dt * 5;
-    if (f.life <= 0) { flashes.splice(i, 1); continue; }
-    ctx2d.globalAlpha = f.life * 0.6;
-    const grad = ctx2d.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * (2 - f.life));
-    grad.addColorStop(0, "rgba(255,255,255,0.9)");
-    grad.addColorStop(1, "rgba(255,255,255,0)");
-    ctx2d.fillStyle = grad;
-    ctx2d.beginPath();
-    ctx2d.arc(f.x, f.y, f.r * (2 - f.life), 0, Math.PI * 2);
-    ctx2d.fill();
-  }
-
-  ctx2d.globalCompositeOperation = "source-over";
-  ctx2d.globalAlpha = 1;
+  ctx2d.globalCompositeOperation = "source-over"; ctx2d.globalAlpha = 1;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
-/* ---------- 打ち上げ操作 ---------- */
-// クリック地点でぴったり開花。連打・マルチタッチで何発でも同時に上がる
-const typeSel = document.getElementById("typeSel");
-function launch(x, y, scatter = 0, type) {
-  SoundEngine.unlock();
-  const targetY = Math.min(Math.max(y, H * 0.08), H * 0.8);
-  rockets.push(new Rocket(x, targetY, scatter, type || typeSel.value));
+/* ── Shot counter & milestone ── */
+let shotCount = 0;
+const counterEl = document.getElementById("counter");
+const msEl = document.getElementById("milestone");
+const msNum = document.getElementById("ms-number");
+const msLbl = document.getElementById("ms-label");
+let msTimer = null;
+
+function incrementCounter() {
+  shotCount++;
+  counterEl.textContent = `${shotCount} 発`;
+  counterEl.classList.remove("pop");
+  requestAnimationFrame(() => counterEl.classList.add("pop"));
+
+  if (shotCount % 50 === 0) triggerMilestone(shotCount);
 }
 
-let hintShown = true;
-canvas.addEventListener("pointerdown", (e) => {
-  launch(e.clientX, e.clientY);
-  if (hintShown) {
-    document.getElementById("hint").classList.add("hidden");
-    hintShown = false;
+function triggerMilestone(n) {
+  // 派手なフィナーレ
+  const burstCount = Math.min(5 + Math.floor(n / 50), 15);
+  for (let i = 0; i < burstCount; i++) {
+    setTimeout(() => {
+      const x = rand(W * 0.1, W * 0.9);
+      const y = rand(H * 0.08, H * 0.4);
+      const type = TYPE_KEYS[(Math.random() * TYPE_KEYS.length)|0];
+      rockets.push(new Rocket(x, y, 0, type));
+    }, i * rand(80, 200));
   }
-});
-// マルチタッチ対応: 指ごとに pointerdown が発火するので同時打ち上げ可能
+  // テキスト演出
+  msNum.textContent = n;
+  msLbl.textContent = "SHOTS";
+  msEl.classList.remove("show");
+  if (msTimer) clearTimeout(msTimer);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    msEl.classList.add("show");
+    msTimer = setTimeout(() => msEl.classList.remove("show"), 3200);
+  }));
+}
 
-/* 自動打ち上げ */
-let autoMode = true;
-let autoTimer = 0;
+/* ── Type chips ── */
+const TYPES = [
+  { key: "random", label: "おまかせ" },
+  { key: "peony",  label: "牡丹" },
+  { key: "chrys",  label: "菊" },
+  { key: "willow", label: "柳" },
+  { key: "ring",   label: "環" },
+  { key: "heart",  label: "ハート" },
+  { key: "senrin", label: "千輪" },
+  { key: "change", label: "色変化" },
+];
+let selectedType = "random";
+const chipsEl = document.getElementById("chips");
+TYPES.forEach(({ key, label }) => {
+  const el = document.createElement("button");
+  el.className = "chip" + (key === "random" ? " active" : "");
+  el.textContent = label;
+  el.addEventListener("click", () => {
+    selectedType = key;
+    chipsEl.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    el.classList.add("active");
+  });
+  chipsEl.appendChild(el);
+});
+
+/* ── Launch ── */
+function launch(x, y, scatter = 0, typeOverride) {
+  SoundEngine.unlock();
+  const ty = Math.min(Math.max(y, H * 0.08), H * 0.82);
+  rockets.push(new Rocket(x, ty, scatter, typeOverride || selectedType));
+  incrementCounter();
+}
+
+let hintGone = false;
+canvas.addEventListener("pointerdown", e => {
+  launch(e.clientX, e.clientY);
+  if (!hintGone) { document.getElementById("hint").classList.add("gone"); hintGone = true; }
+});
+
+/* ── Auto mode ── */
+let autoMode = true, autoTimer = 0;
 setInterval(() => {
   if (!autoMode || document.hidden) return;
   autoTimer -= 0.5;
   if (autoTimer <= 0) {
-    // 自動モードは1〜3発をまとめて打ち上げ
-    const burst = 1 + ((Math.random() * 3) | 0);
-    for (let i = 0; i < burst; i++) {
-      setTimeout(() => launch(rand(W * 0.15, W * 0.85), rand(H * 0.15, H * 0.45), 30, "random"), i * rand(150, 400));
-    }
+    const burst = 1 + ((Math.random() * 3)|0);
+    for (let i = 0; i < burst; i++)
+      setTimeout(() => launch(rand(W*0.15, W*0.85), rand(H*0.12, H*0.45), 30, "random"), i * rand(150,400));
     autoTimer = rand(1.5, 4);
   }
 }, 500);
 
-/* ---------- UI ---------- */
+/* ── UI controls ── */
 const muteBtn = document.getElementById("muteBtn");
+const soundIcon = document.getElementById("soundIcon");
+const speakerOn  = `<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>`;
+const speakerOff = `<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>`;
+
 muteBtn.addEventListener("click", () => {
-  SoundEngine.setMuted(!SoundEngine.muted);
-  muteBtn.textContent = SoundEngine.muted ? "🔇 音なし" : "🔊 音あり";
-  if (!SoundEngine.muted) SoundEngine.unlock();
+  const now = !SoundEngine.muted;
+  SoundEngine.setMuted(now);
+  muteBtn.classList.toggle("active", !now);
+  soundIcon.innerHTML = now ? speakerOff : speakerOn;
+  if (!now) SoundEngine.unlock();
+});
+
+document.getElementById("volSlider").addEventListener("input", e => {
+  SoundEngine.setVolume(e.target.value / 100);
 });
 
 const autoBtn = document.getElementById("autoBtn");
@@ -635,10 +666,6 @@ autoBtn.addEventListener("click", () => {
   autoMode = !autoMode;
   autoBtn.classList.toggle("active", autoMode);
   if (autoMode) SoundEngine.unlock();
-});
-
-document.getElementById("volume").addEventListener("input", (e) => {
-  SoundEngine.setVolume(e.target.value / 100);
 });
 </script>
 </body>
