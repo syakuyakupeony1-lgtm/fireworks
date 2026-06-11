@@ -50,6 +50,56 @@ canvas{display:block;width:100vw;height:100vh;touch-action:manipulation;cursor:c
 }
 #badge.live{color:rgba(80,230,120,0.8)}
 #badge.live::before{content:"● ";font-size:8px}
+#badge.full{color:rgba(255,120,80,0.9)}
+#badge.full::before{content:"● ";font-size:8px}
+
+/* ─── 満員オーバーレイ ─── */
+#full-overlay{
+  position:fixed;inset:0;z-index:50;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:16px;
+  background:rgba(4,4,15,0.82);
+  backdrop-filter:blur(20px) saturate(160%);
+  -webkit-backdrop-filter:blur(20px) saturate(160%);
+  opacity:0;pointer-events:none;
+  transition:opacity .5s;
+}
+#full-overlay.show{opacity:1;pointer-events:auto}
+#full-icon{font-size:48px;line-height:1}
+#full-title{
+  font-family:var(--font-d);font-size:clamp(22px,5vw,32px);font-weight:700;
+  color:#fff;letter-spacing:-.02em;
+}
+#full-sub{
+  font-family:var(--font);font-size:14px;color:rgba(255,255,255,.5);
+  text-align:center;line-height:1.6;max-width:280px;
+}
+#full-cap{
+  font-family:var(--font-d);font-size:13px;font-weight:600;
+  color:rgba(255,180,60,.8);letter-spacing:.04em;
+}
+#full-watch{
+  margin-top:8px;
+  padding:12px 28px;
+  font-family:var(--font);font-size:15px;font-weight:600;
+  color:#fff;background:rgba(255,255,255,.1);
+  border:0.5px solid rgba(255,255,255,.22);border-radius:999px;
+  cursor:pointer;backdrop-filter:blur(8px);
+  transition:background .2s;
+}
+#full-watch:hover{background:rgba(255,255,255,.18)}
+
+/* ─── 観覧モードバナー ─── */
+#view-banner{
+  position:fixed;bottom:120px;left:50%;transform:translateX(-50%);z-index:20;
+  font-family:var(--font);font-size:12px;font-weight:500;
+  color:rgba(255,180,60,.85);letter-spacing:.04em;
+  background:rgba(255,160,40,.1);border:0.5px solid rgba(255,160,40,.3);
+  padding:6px 16px;border-radius:999px;
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  pointer-events:none;display:none;
+}
+#view-banner.show{display:block}
 
 /* ─── Bottom bar ─── */
 #bar{
@@ -164,7 +214,17 @@ canvas{display:block;width:100vw;height:100vh;touch-action:manipulation;cursor:c
 </div>
 
 <div id="hint">空をタップ → 花火 ／ 海をタップ → 噴水</div>
+<div id="view-banner">👁 観覧モード — 満員のため打ち上げはできません</div>
 <div id="ms"><div id="ms-n">50</div><div id="ms-l">SHOTS</div></div>
+
+<!-- 満員オーバーレイ -->
+<div id="full-overlay">
+  <div id="full-icon">🎆</div>
+  <div id="full-title">只今満員です</div>
+  <div id="full-sub">現在 <span id="full-now">100</span> 人が参加中です。<br>観覧モードで花火をお楽しみいただけます。</div>
+  <div id="full-cap">定員 100 名</div>
+  <button id="full-watch">観覧モードで入場</button>
+</div>
 
 <script>
 "use strict";
@@ -734,6 +794,29 @@ const badgeEl=document.getElementById("badge");
 // ソロモードのカウンター表示
 sTotalEl.textContent=soloTotal.toLocaleString();
 
+const CAPACITY = 100; // 定員
+let viewOnly = false; // 観覧モードフラグ
+
+const fullOverlay = document.getElementById("full-overlay");
+const fullNow     = document.getElementById("full-now");
+const viewBanner  = document.getElementById("view-banner");
+
+function enterViewOnly(){
+  viewOnly = true;
+  viewBanner.classList.add("show");
+  // ボトムバーを非表示（打ち上げ不要）
+  document.getElementById("bar").style.display = "none";
+  document.getElementById("hint").classList.add("gone");
+  canvas.style.cursor = "default";
+  badgeEl.textContent = "観覧モード";
+  badgeEl.classList.add("full");
+}
+
+document.getElementById("full-watch").addEventListener("click", () => {
+  fullOverlay.classList.remove("show");
+  enterViewOnly();
+});
+
 const Multi=(()=>{
   if(!FB_CONFIG){
     return {
@@ -747,7 +830,6 @@ const Multi=(()=>{
     };
   }
 
-  // Firebase compat v9 を動的ロード
   const uid=sessionStorage.getItem("fw_uid")||Math.random().toString(36).slice(2);
   sessionStorage.setItem("fw_uid",uid);
   let db=null;
@@ -756,42 +838,64 @@ const Multi=(()=>{
     firebase.initializeApp(FB_CONFIG);
     db=firebase.database();
 
-    // ─ プレゼンス ─
-    const presRef=db.ref(`fw_presence/${uid}`);
-    presRef.set({t:firebase.database.ServerValue.TIMESTAMP});
-    presRef.onDisconnect().remove();
-    db.ref("fw_presence").on("value",snap=>{
-      sOnlineEl.textContent=`${snap.numChildren()}人`;
+    // ─ 入場チェック: 定員を超えていたら観覧モード ─
+    db.ref("fw_presence").once("value", snap => {
+      const current = snap.numChildren();
+      if(current >= CAPACITY){
+        fullNow.textContent = current;
+        fullOverlay.classList.add("show");
+        // 観覧専用: 他者の花火だけ受信する
+        listenLaunches();
+        listenStats();
+        return;
+      }
+      // ─ 定員内 → プレゼンス登録 ─
+      const presRef = db.ref(`fw_presence/${uid}`);
+      presRef.set({t: firebase.database.ServerValue.TIMESTAMP});
+      presRef.onDisconnect().remove();
+      listenPresence();
+      listenStats();
+      listenLaunches();
+      badgeEl.textContent="ライブ"; badgeEl.classList.add("live");
     });
 
-    // ─ 累計 ─
-    db.ref("fw_stats/total").on("value",snap=>{
-      sTotalEl.textContent=((snap.val()||0)).toLocaleString();
-    });
-
-    // ─ 他ユーザーの打ち上げを受信 ─
-    const since=Date.now();
-    db.ref("fw_launches").orderByChild("t").startAt(since).on("child_added",snap=>{
-      const d=snap.val(); if(!d||d.uid===uid)return;
-      const x=d.xr*W, y=d.yr*HZ;
-      if(d.type==="fountain"){ fountainObjs.push(new Fountain(x)); }
-      else { rockets.push(new Rocket(x,y,0,d.type)); }
-      // 古いレコードを削除
-      setTimeout(()=>snap.ref.remove(),20000);
-    });
-
-    // 定期クリーンアップ（自分が書いた古いレコード）
-    setInterval(()=>{
-      db.ref("fw_launches").once("value",snap=>{
-        const old=Date.now()-30000;
-        snap.forEach(c=>{if((c.val().t||0)<old)c.ref.remove();});
+    // 人数が増減したとき、満員になったら観覧モードに切り替え
+    function listenPresence(){
+      db.ref("fw_presence").on("value", snap => {
+        const n = snap.numChildren();
+        sOnlineEl.textContent = `${n}人`;
+        // 自分の参加後に他人が来て超えるケースはほぼないが念のため
+        if(n > CAPACITY && !viewOnly){
+          badgeEl.textContent="満員"; badgeEl.classList.add("full");
+        }
       });
-    },60000);
+    }
 
-    badgeEl.textContent="ライブ"; badgeEl.classList.add("live");
+    function listenStats(){
+      db.ref("fw_stats/total").on("value", snap => {
+        sTotalEl.textContent = ((snap.val()||0)).toLocaleString();
+      });
+    }
+
+    function listenLaunches(){
+      const since = Date.now();
+      db.ref("fw_launches").orderByChild("t").startAt(since).on("child_added", snap => {
+        const d = snap.val(); if(!d || d.uid===uid) return;
+        const x = d.xr*W, y = d.yr*HZ;
+        if(d.type==="fountain") fountainObjs.push(new Fountain(x));
+        else rockets.push(new Rocket(x,y,0,d.type));
+        setTimeout(()=>snap.ref.remove(), 20000);
+      });
+      // 定期クリーンアップ
+      setInterval(()=>{
+        db.ref("fw_launches").once("value", snap=>{
+          const old=Date.now()-30000;
+          snap.forEach(c=>{if((c.val().t||0)<old)c.ref.remove();});
+        });
+      }, 60000);
+    }
   }
 
-  // Firebase SDK を動的ロード
   const s1=document.createElement("script");
   s1.src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js";
   s1.onload=()=>{
@@ -803,7 +907,7 @@ const Multi=(()=>{
   document.head.appendChild(s1);
 
   function broadcast(x,y,type){
-    if(!db)return;
+    if(!db||viewOnly)return;
     db.ref("fw_launches").push({xr:x/W,yr:y/HZ,type,uid,t:firebase.database.ServerValue.TIMESTAMP});
     db.ref("fw_stats/total").transaction(v=>(v||0)+1);
   }
@@ -887,8 +991,8 @@ function launch(x,y,scatter=0,typeOvr){
 
 let hintGone=false;
 canvas.addEventListener("pointerdown",e=>{
+  if(viewOnly) return; // 観覧モードは操作不可
   Sfx.unlock();
-  // 海(HZ以下)をタップ & おまかせ → 噴水
   if(e.clientY>HZ&&selType==="random"){
     fountainObjs.push(new Fountain(e.clientX));
     incShot(); Multi.broadcast(e.clientX,e.clientY,"fountain");
