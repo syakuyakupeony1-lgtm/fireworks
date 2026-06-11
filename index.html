@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>花火大会 - Fireworks</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #050510; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: manipulation; }
+
+  #ui {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+    z-index: 10;
+  }
+  #ui button {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #eee;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-size: 14px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: background 0.2s;
+  }
+  #ui button:hover { background: rgba(255, 255, 255, 0.18); }
+  #ui button.active { background: rgba(255, 180, 60, 0.3); border-color: rgba(255, 180, 60, 0.6); }
+
+  #volWrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 20px;
+    padding: 6px 12px;
+    backdrop-filter: blur(6px);
+  }
+  #volWrap input { width: 80px; accent-color: #ffb43c; }
+
+  #hint {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.6);
+    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+    font-size: 14px;
+    pointer-events: none;
+    transition: opacity 1s;
+    text-shadow: 0 1px 4px #000;
+  }
+  #hint.hidden { opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <button id="muteBtn" title="サウンド ON/OFF">🔊 音あり</button>
+  <button id="autoBtn" class="active" title="自動打ち上げ">🎆 自動</button>
+  <div id="volWrap">
+    <span style="color:#ccc;font-size:13px">音量</span>
+    <input type="range" id="volume" min="0" max="100" value="70">
+  </div>
+</div>
+
+<div id="hint">タップ / クリックした場所に花火が打ち上がります(連打・複数指OK)</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+ * サウンドエンジン（Web Audio API・全合成、音声ファイル不要）
+ *  - whistle(): 打ち上げの「ヒューーー」（上昇中ずっと鳴る）
+ *  - boom():    開花の「ドンッ」（重低音 + 破裂ノイズ + 余韻）
+ * ============================================================ */
+const SoundEngine = (() => {
+  let ctx = null;
+  let master = null;
+  let muted = false;
+  let volume = 0.7;
+
+  function ensureCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain();
+      master.gain.value = muted ? 0 : volume;
+      // 過大入力で音割れしないようにリミッターを挟む
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -10;
+      limiter.knee.value = 6;
+      limiter.ratio.value = 12;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.25;
+      master.connect(limiter);
+      limiter.connect(ctx.destination);
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }
+
+  function applyGain() {
+    if (master) master.gain.setTargetAtTime(muted ? 0 : volume, ctx.currentTime, 0.02);
+  }
+
+  // ホワイトノイズバッファ(使い回し)
+  let noiseBuf = null;
+  function getNoiseBuf() {
+    if (!noiseBuf) {
+      const len = ctx.sampleRate * 2;
+      noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    return noiseBuf;
+  }
+
+  /**
+   * 打ち上げ音「ヒューーー」
+   * 高めの笛音がゆっくり下がりつつビブラートがかかる + かすかな風切りノイズ。
+   * duration: 上昇にかかる秒数(玉の飛翔時間と同期させる)
+   * 戻り値: 途中で止めるための stop 関数
+   */
+  function whistle(duration) {
+    if (muted) return () => {};
+    const ac = ensureCtx();
+    const t0 = ac.currentTime;
+
+    // --- 笛のトーン(三角波を下降グライド) ---
+    const osc = ac.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(2200, t0);
+    osc.frequency.exponentialRampToValueAtTime(600, t0 + duration);
+
+    // ビブラート(ヒュルヒュル感)
+    const vib = ac.createOscillator();
+    vib.type = "sine";
+    vib.frequency.setValueAtTime(18, t0);
+    vib.frequency.linearRampToValueAtTime(9, t0 + duration);
+    const vibGain = ac.createGain();
+    vibGain.gain.value = 60;
+    vib.connect(vibGain);
+    vibGain.connect(osc.frequency);
+
+    const oscGain = ac.createGain();
+    oscGain.gain.setValueAtTime(0.0001, t0);
+    oscGain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.15);
+    oscGain.gain.setValueAtTime(0.12, t0 + duration * 0.7);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+
+    // --- 風切りノイズ(シューという空気感) ---
+    const noise = ac.createBufferSource();
+    noise.buffer = getNoiseBuf();
+    noise.loop = true;
+    const bp = ac.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 1.5;
+    bp.frequency.setValueAtTime(3000, t0);
+    bp.frequency.exponentialRampToValueAtTime(900, t0 + duration);
+    const noiseGain = ac.createGain();
+    noiseGain.gain.setValueAtTime(0.0001, t0);
+    noiseGain.gain.exponentialRampToValueAtTime(0.05, t0 + 0.2);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+
+    osc.connect(oscGain); oscGain.connect(master);
+    noise.connect(bp); bp.connect(noiseGain); noiseGain.connect(master);
+
+    osc.start(t0); vib.start(t0); noise.start(t0);
+    const tEnd = t0 + duration + 0.1;
+    osc.stop(tEnd); vib.stop(tEnd); noise.stop(tEnd);
+
+    return function stopEarly() {
+      const now = ac.currentTime;
+      oscGain.gain.cancelScheduledValues(now);
+      noiseGain.gain.cancelScheduledValues(now);
+      oscGain.gain.setTargetAtTime(0.0001, now, 0.03);
+      noiseGain.gain.setTargetAtTime(0.0001, now, 0.03);
+    };
+  }
+
+  /**
+   * 開花音「ドンッ」
+   * 重低音のサイン波(胸に響くドン) + 破裂ノイズ(バリッ) + 低域の余韻(ゴロゴロ)。
+   * size: 0.5〜1.5 程度。玉の大きさで音の迫力を変える。
+   */
+  function boom(size = 1) {
+    if (muted) return;
+    const ac = ensureCtx();
+    const t0 = ac.currentTime;
+
+    // --- 重低音「ドン」 ---
+    const sub = ac.createOscillator();
+    sub.type = "sine";
+    sub.frequency.setValueAtTime(120 / size, t0);
+    sub.frequency.exponentialRampToValueAtTime(35, t0 + 0.4 * size);
+    const subGain = ac.createGain();
+    subGain.gain.setValueAtTime(0.9 * size, t0);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9 * size);
+    sub.connect(subGain); subGain.connect(master);
+    sub.start(t0); sub.stop(t0 + 1.0 * size);
+
+    // --- 破裂ノイズ「バリッ」 ---
+    const burst = ac.createBufferSource();
+    burst.buffer = getNoiseBuf();
+    const lp = ac.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(6000, t0);
+    lp.frequency.exponentialRampToValueAtTime(150, t0 + 0.7 * size);
+    const burstGain = ac.createGain();
+    burstGain.gain.setValueAtTime(0.7 * size, t0);
+    burstGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8 * size);
+    burst.connect(lp); lp.connect(burstGain); burstGain.connect(master);
+    burst.start(t0); burst.stop(t0 + 1.0 * size);
+
+    // --- 余韻(遠雷のようなゴロゴロ) ---
+    const rumble = ac.createBufferSource();
+    rumble.buffer = getNoiseBuf();
+    rumble.loop = true;
+    const rumbleLp = ac.createBiquadFilter();
+    rumbleLp.type = "lowpass";
+    rumbleLp.frequency.value = 120;
+    const rumbleGain = ac.createGain();
+    rumbleGain.gain.setValueAtTime(0.0001, t0);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.25 * size, t0 + 0.08);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8 * size);
+    rumble.connect(rumbleLp); rumbleLp.connect(rumbleGain); rumbleGain.connect(master);
+    rumble.start(t0); rumble.stop(t0 + 2.0 * size);
+  }
+
+  /** パチパチという火花の弾け音(開花後の余韻) */
+  function crackle(size = 1) {
+    if (muted) return;
+    const ac = ensureCtx();
+    const count = Math.floor(6 + Math.random() * 8 * size);
+    for (let i = 0; i < count; i++) {
+      const t = ac.currentTime + 0.15 + Math.random() * 1.2 * size;
+      const pop = ac.createBufferSource();
+      pop.buffer = getNoiseBuf();
+      const hp = ac.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 3000 + Math.random() * 4000;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.05 + Math.random() * 0.06, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      pop.connect(hp); hp.connect(g); g.connect(master);
+      pop.start(t); pop.stop(t + 0.06);
+    }
+  }
+
+  return {
+    unlock: ensureCtx,
+    whistle, boom, crackle,
+    setMuted(m) { muted = m; if (ctx) applyGain(); },
+    setVolume(v) { volume = v; if (ctx) applyGain(); },
+    get muted() { return muted; },
+  };
+})();
+
+/* ============================================================
+ * 花火エンジン(Canvas 2D)
+ * ============================================================ */
+const canvas = document.getElementById("canvas");
+const ctx2d = canvas.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx2d.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener("resize", resize);
+resize();
+
+const COLORS = [
+  ["#ff5252", "#ffd180"], // 赤金
+  ["#69f0ae", "#b9f6ca"], // 緑
+  ["#40c4ff", "#80d8ff"], // 青
+  ["#ffd740", "#ffff8d"], // 金
+  ["#ff4081", "#ff80ab"], // ピンク
+  ["#e040fb", "#ea80fc"], // 紫
+  ["#ffffff", "#b3e5fc"], // 白銀
+];
+
+const rockets = [];   // 上昇中の玉
+const particles = []; // 開花後の火花
+
+const rand = (a, b) => a + Math.random() * (b - a);
+
+const GRAVITY = 0.06; // 1フレーム(60fps基準)あたりの減速量
+
+/** 打ち上げ玉。クリック地点(targetX, targetY)でちょうど頂点に達して開花する */
+class Rocket {
+  constructor(targetX, targetY, scatter = 0) {
+    this.x = targetX + rand(-scatter, scatter);
+    this.y = H + 10;
+    this.targetY = targetY;
+    this.size = rand(0.7, 1.4); // 玉の大きさ → 開花規模と音量に反映
+    // 頂点がちょうど targetY になる初速を逆算: v = √(2g·h)
+    const h = this.y - this.targetY;
+    this.vy = -Math.sqrt(2 * GRAVITY * h);
+    this.vx = 0;
+    this.colorSet = COLORS[(Math.random() * COLORS.length) | 0];
+    this.trail = [];
+    this.flightTime = (-this.vy / GRAVITY) / 60; // 到達時間(秒)。ヒュー音の長さと同期
+    this.stopWhistle = SoundEngine.whistle(this.flightTime);
+    this.age = 0;
+  }
+
+  update(dt) {
+    this.age += dt;
+    this.trail.push({ x: this.x, y: this.y, life: 1 });
+    if (this.trail.length > 18) this.trail.shift();
+    for (const t of this.trail) t.life -= dt * 3;
+
+    this.vy += GRAVITY * dt * 60;  // 重力で減速
+    this.x += this.vx * dt * 60;
+    this.y += this.vy * dt * 60;
+
+    // クリックした高さ(頂点)に達したら開花
+    if (this.y <= this.targetY || this.vy >= -0.3) {
+      this.explode();
+      return false;
+    }
+    return true;
+  }
+
+  explode() {
+    this.stopWhistle();
+    SoundEngine.boom(this.size);
+    SoundEngine.crackle(this.size);
+
+    const count = Math.floor(70 + 60 * this.size);
+    const speed = (2.6 + 1.8 * this.size) * (H / 800);
+    const [c1, c2] = this.colorSet;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + rand(-0.05, 0.05);
+      const v = speed * (0.55 + Math.random() * 0.45);
+      particles.push(new Particle(
+        this.x, this.y,
+        Math.cos(angle) * v, Math.sin(angle) * v,
+        Math.random() < 0.7 ? c1 : c2,
+        this.size
+      ));
+    }
+    // 開花の閃光
+    flashes.push({ x: this.x, y: this.y, r: 30 * this.size, life: 1 });
+  }
+
+  draw() {
+    // 軌跡(尾)
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i];
+      if (t.life <= 0) continue;
+      ctx2d.globalAlpha = t.life * 0.5;
+      ctx2d.fillStyle = "#ffcf8a";
+      const r = 1.2 * (i / this.trail.length) + 0.4;
+      ctx2d.beginPath();
+      ctx2d.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+    // 玉本体
+    ctx2d.globalAlpha = 1;
+    ctx2d.fillStyle = "#fff4d6";
+    ctx2d.beginPath();
+    ctx2d.arc(this.x, this.y, 2.2, 0, Math.PI * 2);
+    ctx2d.fill();
+  }
+}
+
+/** 開花後の火花 */
+class Particle {
+  constructor(x, y, vx, vy, color, size) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.color = color;
+    this.life = 1;
+    this.decay = rand(0.45, 0.85) / size;
+    this.r = rand(1.2, 2.4);
+    this.twinkle = Math.random() < 0.3;
+  }
+  update(dt) {
+    this.vx *= 0.985;
+    this.vy = this.vy * 0.985 + 0.035 * dt * 60; // 空気抵抗 + 重力
+    this.x += this.vx * dt * 60;
+    this.y += this.vy * dt * 60;
+    this.life -= this.decay * dt;
+    return this.life > 0;
+  }
+  draw() {
+    const a = this.twinkle && Math.random() < 0.25 ? this.life * 0.3 : this.life;
+    ctx2d.globalAlpha = Math.max(a, 0);
+    ctx2d.fillStyle = this.color;
+    ctx2d.beginPath();
+    ctx2d.arc(this.x, this.y, this.r * this.life, 0, Math.PI * 2);
+    ctx2d.fill();
+  }
+}
+
+const flashes = []; // 開花時の閃光
+
+/* ---------- メインループ ---------- */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+
+  // 残像を残しつつフェード(花火の尾を引く描画)
+  ctx2d.globalCompositeOperation = "destination-out";
+  ctx2d.globalAlpha = 1;
+  ctx2d.fillStyle = "rgba(0,0,0,0.22)";
+  ctx2d.fillRect(0, 0, W, H);
+  ctx2d.globalCompositeOperation = "lighter";
+
+  for (let i = rockets.length - 1; i >= 0; i--) {
+    if (!rockets[i].update(dt)) rockets.splice(i, 1);
+    else rockets[i].draw();
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    if (!particles[i].update(dt)) particles.splice(i, 1);
+    else particles[i].draw();
+  }
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    const f = flashes[i];
+    f.life -= dt * 5;
+    if (f.life <= 0) { flashes.splice(i, 1); continue; }
+    ctx2d.globalAlpha = f.life * 0.6;
+    const grad = ctx2d.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * (2 - f.life));
+    grad.addColorStop(0, "rgba(255,255,255,0.9)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    ctx2d.fillStyle = grad;
+    ctx2d.beginPath();
+    ctx2d.arc(f.x, f.y, f.r * (2 - f.life), 0, Math.PI * 2);
+    ctx2d.fill();
+  }
+
+  ctx2d.globalCompositeOperation = "source-over";
+  ctx2d.globalAlpha = 1;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- 打ち上げ操作 ---------- */
+// クリック地点でぴったり開花。連打・マルチタッチで何発でも同時に上がる
+function launch(x, y, scatter = 0) {
+  SoundEngine.unlock();
+  const targetY = Math.min(Math.max(y, H * 0.08), H * 0.8);
+  rockets.push(new Rocket(x, targetY, scatter));
+}
+
+let hintShown = true;
+canvas.addEventListener("pointerdown", (e) => {
+  launch(e.clientX, e.clientY);
+  if (hintShown) {
+    document.getElementById("hint").classList.add("hidden");
+    hintShown = false;
+  }
+});
+// マルチタッチ対応: 指ごとに pointerdown が発火するので同時打ち上げ可能
+
+/* 自動打ち上げ */
+let autoMode = true;
+let autoTimer = 0;
+setInterval(() => {
+  if (!autoMode || document.hidden) return;
+  autoTimer -= 0.5;
+  if (autoTimer <= 0) {
+    // 自動モードは1〜3発をまとめて打ち上げ
+    const burst = 1 + ((Math.random() * 3) | 0);
+    for (let i = 0; i < burst; i++) {
+      setTimeout(() => launch(rand(W * 0.15, W * 0.85), rand(H * 0.15, H * 0.45), 30), i * rand(150, 400));
+    }
+    autoTimer = rand(1.5, 4);
+  }
+}, 500);
+
+/* ---------- UI ---------- */
+const muteBtn = document.getElementById("muteBtn");
+muteBtn.addEventListener("click", () => {
+  SoundEngine.setMuted(!SoundEngine.muted);
+  muteBtn.textContent = SoundEngine.muted ? "🔇 音なし" : "🔊 音あり";
+  if (!SoundEngine.muted) SoundEngine.unlock();
+});
+
+const autoBtn = document.getElementById("autoBtn");
+autoBtn.addEventListener("click", () => {
+  autoMode = !autoMode;
+  autoBtn.classList.toggle("active", autoMode);
+  if (autoMode) SoundEngine.unlock();
+});
+
+document.getElementById("volume").addEventListener("input", (e) => {
+  SoundEngine.setVolume(e.target.value / 100);
+});
+</script>
+</body>
+</html>
