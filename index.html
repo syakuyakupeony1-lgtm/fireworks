@@ -5,158 +5,167 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>花火大会</title>
 <style>
-:root {
-  --glass: rgba(255,255,255,0.08);
-  --glass-b: rgba(255,255,255,0.13);
-  --active-bg: rgba(255,214,80,0.18);
-  --active-bc: rgba(255,214,80,0.55);
-  --active-c: #ffd650;
-  --blur: blur(24px) saturate(180%);
-  --font: -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
-  --font-d: -apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;
+:root{
+  --glass:rgba(255,255,255,0.07);
+  --glass-b:rgba(255,255,255,0.11);
+  --gH:rgba(255,255,255,0.16);
+  --act-bg:rgba(255,214,80,0.16);
+  --act-bc:rgba(255,214,80,0.5);
+  --act-c:#ffd650;
+  --blur:blur(28px) saturate(200%);
+  --f:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+  --fd:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;background:#04040f}
 canvas{display:block;width:100vw;height:100vh;touch-action:manipulation;cursor:crosshair}
 
-/* ─── Stats (top-left) ─── */
-#stats{
+/* ── HUD (top-left) ── */
+#hud{
   position:fixed;top:18px;left:18px;z-index:20;
-  display:flex;align-items:center;gap:12px;
-  padding:8px 16px;
-  background:var(--glass);border:0.5px solid var(--glass-b);border-radius:999px;
+  display:flex;align-items:stretch;
+  background:var(--glass);border:0.5px solid var(--glass-b);
+  border-radius:16px;
   backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  overflow:hidden;
 }
-.st{display:flex;flex-direction:column;align-items:center;gap:1px}
-.st-v{font-family:var(--font-d);font-size:16px;font-weight:600;letter-spacing:-0.02em;color:#fff}
-.st-l{font-family:var(--font);font-size:9px;font-weight:500;letter-spacing:0.07em;
-       color:rgba(255,255,255,0.45);text-transform:uppercase}
-.st-div{width:0.5px;height:24px;background:rgba(255,255,255,0.12)}
+.hud-cell{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:2px;padding:10px 18px;
+}
+.hud-sep{width:0.5px;background:rgba(255,255,255,0.1);margin:10px 0}
+.hud-v{font-family:var(--fd);font-size:17px;font-weight:700;letter-spacing:-.03em;color:#fff;line-height:1}
+.hud-l{font-family:var(--f);font-size:9px;font-weight:500;letter-spacing:.08em;
+        text-transform:uppercase;color:rgba(255,255,255,.38)}
 
-/* ─── Shot counter (top-right) ─── */
+/* 接続ステータスセル */
+#connCell{cursor:pointer;transition:background .2s;min-width:72px}
+#connCell:hover{background:rgba(255,255,255,.07)}
+#connDot{display:inline-block;width:6px;height:6px;border-radius:50%;
+         background:rgba(255,255,255,.25);margin-right:5px;
+         vertical-align:middle;transition:background .4s}
+#connCell.live #connDot{background:#3de877;box-shadow:0 0 6px #3de877}
+#connCell.solo #connDot{background:rgba(255,255,255,.3)}
+#connCell.full #connDot{background:#ff6b4a;box-shadow:0 0 6px #ff6b4a}
+#connLabel{font-family:var(--fd);font-size:13px;font-weight:600;
+           color:rgba(255,255,255,.55);letter-spacing:.01em;line-height:1}
+#connCell.live #connLabel{color:#3de877}
+#connCell.full #connLabel{color:#ff6b4a}
+
+/* ── Shot counter (top-right) ── */
 #counter{
   position:fixed;top:20px;right:20px;z-index:20;
-  font-family:var(--font-d);font-size:13px;font-weight:500;letter-spacing:0.02em;
-  color:rgba(255,255,255,0.35);pointer-events:none;transition:color .4s;
+  font-family:var(--fd);font-size:13px;font-weight:500;letter-spacing:.02em;
+  color:rgba(255,255,255,.32);pointer-events:none;transition:color .4s;
 }
 #counter.pop{color:rgba(255,214,80,.9);animation:pop .5s cubic-bezier(.34,1.56,.64,1)}
 @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
 
-/* ─── Connection badge ─── */
-#badge{
-  position:fixed;top:62px;left:18px;z-index:20;
-  font-family:var(--font);font-size:11px;font-weight:500;
-  color:rgba(255,255,255,0.3);pointer-events:none;letter-spacing:0.04em;
-}
-#badge.live{color:rgba(80,230,120,0.8)}
-#badge.live::before{content:"● ";font-size:8px}
-#badge.full{color:rgba(255,120,80,0.9)}
-#badge.full::before{content:"● ";font-size:8px}
-
-/* ─── 満員オーバーレイ ─── */
-#full-overlay{
-  position:fixed;inset:0;z-index:50;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:16px;
-  background:rgba(4,4,15,0.82);
-  backdrop-filter:blur(20px) saturate(160%);
-  -webkit-backdrop-filter:blur(20px) saturate(160%);
-  opacity:0;pointer-events:none;
-  transition:opacity .5s;
-}
-#full-overlay.show{opacity:1;pointer-events:auto}
-#full-icon{font-size:48px;line-height:1}
-#full-title{
-  font-family:var(--font-d);font-size:clamp(22px,5vw,32px);font-weight:700;
-  color:#fff;letter-spacing:-.02em;
-}
-#full-sub{
-  font-family:var(--font);font-size:14px;color:rgba(255,255,255,.5);
-  text-align:center;line-height:1.6;max-width:280px;
-}
-#full-cap{
-  font-family:var(--font-d);font-size:13px;font-weight:600;
-  color:rgba(255,180,60,.8);letter-spacing:.04em;
-}
-#full-watch{
-  margin-top:8px;
-  padding:12px 28px;
-  font-family:var(--font);font-size:15px;font-weight:600;
-  color:#fff;background:rgba(255,255,255,.1);
-  border:0.5px solid rgba(255,255,255,.22);border-radius:999px;
-  cursor:pointer;backdrop-filter:blur(8px);
-  transition:background .2s;
-}
-#full-watch:hover{background:rgba(255,255,255,.18)}
-
-/* ─── 観覧モードバナー ─── */
-#view-banner{
-  position:fixed;bottom:120px;left:50%;transform:translateX(-50%);z-index:20;
-  font-family:var(--font);font-size:12px;font-weight:500;
-  color:rgba(255,180,60,.85);letter-spacing:.04em;
-  background:rgba(255,160,40,.1);border:0.5px solid rgba(255,160,40,.3);
-  padding:6px 16px;border-radius:999px;
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-  pointer-events:none;display:none;
-}
-#view-banner.show{display:block}
-
-/* ─── Bottom bar ─── */
+/* ── Bottom bar ── */
 #bar{
   position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
   z-index:20;display:flex;flex-direction:column;align-items:center;gap:10px;
+  pointer-events:auto;
 }
 #chips{
-  display:flex;gap:6px;padding:8px 12px;
-  background:var(--glass);border:0.5px solid var(--glass-b);border-radius:999px;
+  display:flex;gap:5px;padding:7px 11px;
+  background:var(--glass);border:0.5px solid var(--glass-b);
+  border-radius:999px;
   backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
   max-width:calc(100vw - 24px);overflow-x:auto;scrollbar-width:none;
 }
 #chips::-webkit-scrollbar{display:none}
 .chip{
-  font-family:var(--font);font-size:12px;font-weight:500;
-  color:rgba(255,255,255,0.6);background:transparent;
-  border:0.5px solid transparent;border-radius:10px;
-  padding:5px 10px;cursor:pointer;white-space:nowrap;user-select:none;
+  font-family:var(--f);font-size:12px;font-weight:500;
+  color:rgba(255,255,255,.55);background:transparent;
+  border:0.5px solid transparent;border-radius:9px;
+  padding:5px 11px;cursor:pointer;white-space:nowrap;user-select:none;
   transition:color .2s,background .2s,border-color .2s;
 }
-.chip:hover{color:rgba(255,255,255,.9);background:rgba(255,255,255,.14)}
-.chip.active{color:var(--active-c);background:var(--active-bg);border-color:var(--active-bc)}
+.chip:hover{color:rgba(255,255,255,.9);background:var(--gH)}
+.chip.active{color:var(--act-c);background:var(--act-bg);border-color:var(--act-bc)}
 
 #controls{
-  display:flex;align-items:center;gap:8px;padding:8px 16px;
-  background:var(--glass);border:0.5px solid var(--glass-b);border-radius:999px;
+  display:flex;align-items:center;gap:6px;padding:7px 14px;
+  background:var(--glass);border:0.5px solid var(--glass-b);
+  border-radius:999px;
   backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
 }
 .cb{
   display:flex;align-items:center;justify-content:center;
   width:34px;height:34px;border-radius:50%;
   border:0.5px solid transparent;background:transparent;cursor:pointer;
-  transition:background .2s,border-color .2s;color:rgba(255,255,255,.7);
+  transition:background .18s,border-color .18s;color:rgba(255,255,255,.65);
 }
-.cb:hover{background:rgba(255,255,255,.14)}
-.cb.active{background:var(--active-bg);border-color:var(--active-bc);color:var(--active-c)}
-.cb svg{width:18px;height:18px;fill:currentColor}
-.cdiv{width:0.5px;height:22px;background:rgba(255,255,255,.12)}
+.cb:hover{background:var(--gH)}
+.cb.active{background:var(--act-bg);border-color:var(--act-bc);color:var(--act-c)}
+.cb svg{width:16px;height:16px;fill:currentColor}
+.cdiv{width:0.5px;height:20px;background:rgba(255,255,255,.1);flex-shrink:0}
+
+/* ソロ切り替えボタン */
+#soloBtn{
+  font-family:var(--f);font-size:11px;font-weight:600;
+  letter-spacing:.04em;padding:0 11px;height:34px;border-radius:17px;
+  border:0.5px solid transparent;background:transparent;cursor:pointer;
+  color:rgba(255,255,255,.5);transition:all .18s;white-space:nowrap;
+}
+#soloBtn:hover{background:var(--gH);color:rgba(255,255,255,.9)}
+#soloBtn.solo-on{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:rgba(255,255,255,.85)}
+
 #vol{
   -webkit-appearance:none;appearance:none;
-  width:72px;height:3px;border-radius:2px;
-  background:rgba(255,255,255,.2);outline:none;cursor:pointer;
+  width:68px;height:3px;border-radius:2px;
+  background:rgba(255,255,255,.18);outline:none;cursor:pointer;
 }
-#vol::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+#vol::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;
   border-radius:50%;background:rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.4)}
-#vol::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+#vol::-moz-range-thumb{width:13px;height:13px;border-radius:50%;
   background:rgba(255,255,255,.9);border:none;box-shadow:0 1px 4px rgba(0,0,0,.4)}
 
-/* ─── Hint ─── */
+/* ── Hint ── */
 #hint{
   position:fixed;bottom:130px;left:50%;transform:translateX(-50%);
-  font-family:var(--font);font-size:13px;color:rgba(255,255,255,.35);
+  font-family:var(--f);font-size:13px;color:rgba(255,255,255,.3);
   pointer-events:none;white-space:nowrap;transition:opacity 1.2s;
 }
 #hint.gone{opacity:0}
 
-/* ─── Milestone ─── */
+/* ── 観覧バナー ── */
+#viewBanner{
+  position:fixed;bottom:120px;left:50%;transform:translateX(-50%);z-index:20;
+  font-family:var(--f);font-size:12px;font-weight:500;
+  color:rgba(255,170,50,.9);letter-spacing:.03em;
+  background:rgba(255,160,40,.1);border:0.5px solid rgba(255,160,40,.28);
+  padding:6px 16px;border-radius:999px;
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  pointer-events:none;display:none;
+}
+#viewBanner.show{display:block}
+
+/* ── 満員オーバーレイ ── */
+#fullOverlay{
+  position:fixed;inset:0;z-index:50;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;
+  background:rgba(4,4,15,.85);
+  backdrop-filter:blur(24px) saturate(160%);
+  -webkit-backdrop-filter:blur(24px) saturate(160%);
+  opacity:0;pointer-events:none;transition:opacity .5s;
+}
+#fullOverlay.show{opacity:1;pointer-events:auto}
+#fullTitle{font-family:var(--fd);font-size:clamp(24px,5vw,34px);font-weight:700;color:#fff;letter-spacing:-.02em}
+#fullSub{font-family:var(--f);font-size:14px;color:rgba(255,255,255,.45);text-align:center;line-height:1.65;max-width:260px}
+#fullCap{font-family:var(--f);font-size:12px;font-weight:600;color:rgba(255,180,60,.7);letter-spacing:.06em}
+#fullWatch{
+  margin-top:6px;padding:12px 30px;
+  font-family:var(--f);font-size:15px;font-weight:600;
+  color:#fff;background:rgba(255,255,255,.1);
+  border:0.5px solid rgba(255,255,255,.2);border-radius:999px;cursor:pointer;
+  backdrop-filter:blur(8px);transition:background .2s;
+}
+#fullWatch:hover{background:rgba(255,255,255,.18)}
+
+/* ── マイルストーン ── */
 #ms{
   position:fixed;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;
@@ -164,38 +173,47 @@ canvas{display:block;width:100vw;height:100vh;touch-action:manipulation;cursor:c
 }
 #ms.show{animation:msf 3s cubic-bezier(.22,1,.36,1) forwards}
 @keyframes msf{
-  0%{opacity:0;transform:scale(.82)}15%{opacity:1;transform:scale(1)}
-  65%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.06)}
+  0%{opacity:0;transform:scale(.82)} 15%{opacity:1;transform:scale(1)}
+  65%{opacity:1;transform:scale(1)}  100%{opacity:0;transform:scale(1.06)}
 }
-#ms-n{
-  font-family:var(--font-d);font-size:clamp(80px,18vw,160px);font-weight:700;
-  letter-spacing:-0.04em;line-height:1;
+#msN{
+  font-family:var(--fd);font-size:clamp(80px,18vw,160px);font-weight:700;
+  letter-spacing:-.04em;line-height:1;
   background:linear-gradient(145deg,#fff 20%,#ffd650 60%,#ff9d00);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
   filter:drop-shadow(0 0 40px rgba(255,200,60,.5));
 }
-#ms-l{
-  margin-top:8px;font-family:var(--font);
+#msL{
+  margin-top:8px;font-family:var(--f);
   font-size:clamp(14px,3vw,20px);font-weight:500;
-  letter-spacing:0.15em;color:rgba(255,255,255,.55);
+  letter-spacing:.15em;color:rgba(255,255,255,.5);
 }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
 
-<div id="stats">
-  <div class="st">
-    <span class="st-v" id="sOnline">1</span>
-    <span class="st-l">参加中</span>
+<!-- HUD -->
+<div id="hud">
+  <div class="hud-cell">
+    <span class="hud-v" id="sOnline">—</span>
+    <span class="hud-l">参加中</span>
   </div>
-  <div class="st-div"></div>
-  <div class="st">
-    <span class="st-v" id="sTotal">0</span>
-    <span class="st-l">累計発数</span>
+  <div class="hud-sep"></div>
+  <div class="hud-cell">
+    <span class="hud-v" id="sTotal">—</span>
+    <span class="hud-l">累計発数</span>
+  </div>
+  <div class="hud-sep"></div>
+  <div class="hud-cell" id="connCell" title="クリックでソロ/ライブ切り替え">
+    <span style="line-height:1;display:flex;align-items:center">
+      <span id="connDot"></span>
+      <span id="connLabel">接続中</span>
+    </span>
+    <span class="hud-l" id="connSub">タップで切替</span>
   </div>
 </div>
-<div id="badge">ソロモード</div>
+
 <div id="counter">0 発</div>
 
 <div id="bar">
@@ -210,217 +228,129 @@ canvas{display:block;width:100vw;height:100vh;touch-action:manipulation;cursor:c
     <button class="cb active" id="autoBtn">
       <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
     </button>
+    <div class="cdiv" id="soloDivider" style="display:none"></div>
+    <button id="soloBtn" style="display:none">ソロ</button>
   </div>
 </div>
 
 <div id="hint">空をタップ → 花火 ／ 海をタップ → 噴水</div>
-<div id="view-banner">👁 観覧モード — 満員のため打ち上げはできません</div>
-<div id="ms"><div id="ms-n">50</div><div id="ms-l">SHOTS</div></div>
+<div id="viewBanner">👁 観覧モード — 満員のため打ち上げはできません</div>
+<div id="ms"><div id="msN">50</div><div id="msL">SHOTS</div></div>
 
-<!-- 満員オーバーレイ -->
-<div id="full-overlay">
-  <div id="full-icon">🎆</div>
-  <div id="full-title">只今満員です</div>
-  <div id="full-sub">現在 <span id="full-now">100</span> 人が参加中です。<br>観覧モードで花火をお楽しみいただけます。</div>
-  <div id="full-cap">定員 100 名</div>
-  <button id="full-watch">観覧モードで入場</button>
+<div id="fullOverlay">
+  <div id="fullTitle">只今満員です</div>
+  <div id="fullSub">現在 <span id="fullNow">100</span> 人が参加中です。<br>観覧モードで花火をお楽しみください。</div>
+  <div id="fullCap">定員 100 名</div>
+  <button id="fullWatch">観覧モードで入場</button>
 </div>
 
 <script>
 "use strict";
 
 /* ================================================================
- * Supabase 設定（任意）
- * ── 設定すると全ユーザーの花火がリアルタイムで共有されます ──
- *
- * 手順:
- * 1. https://supabase.com でプロジェクトを作成（無料）
- * 2. SQL Editor で下記を一度だけ実行:
- *
- *    create table if not exists fw_stats (key text primary key, value bigint default 0);
- *    insert into fw_stats values ('total', 0) on conflict do nothing;
- *    alter table fw_stats enable row level security;
- *    create policy "public read" on fw_stats for select using (true);
- *    create or replace function fw_increment() returns void
- *      language sql security definer as
- *      $$ update fw_stats set value = value + 1 where key = 'total'; $$;
- *    grant execute on function fw_increment() to anon;
- *    alter publication supabase_realtime add table fw_stats;
- *
- * 3. Project Settings → API で「Project URL」と「anon public キー」をコピー
- * 4. 下の SB_URL / SB_KEY に貼り付け
- *
- * ※打ち上げイベントと参加人数は Broadcast / Presence(メモリ上)で
- *   やり取りするため、テーブルは累計カウンター1つだけでOK。
- * 設定しない場合はソロモードで動作します。
+ * Supabase 設定
  * ================================================================ */
 const SB_URL = "https://hlptfaqdzpftzjqwnwqs.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhscHRmYXFkenBmdHpqcXdud3FzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMDA2ODgsImV4cCI6MjA5Njc3NjY4OH0.UoEuR2KOlKnforcApsioElvTGQmF98Q3sF2W_nfnUeU";
+const CAPACITY = 100;
 
 /* ================================================================
- * Sound Engine — 4層ドン / リバーブ / ステレオ定位 / 噴水シュー
+ * Sound Engine
  * ================================================================ */
 const Sfx = (() => {
-  let A = null, master = null, verb = null, vSend = null;
-  let nBuf = null, satCurve = null;
-  let muted = false, vol = 0.7;
-
-  function boot() {
-    if (A) return A;
-    A = new (window.AudioContext || window.webkitAudioContext)();
-    master = A.createGain(); master.gain.value = muted ? 0 : vol;
-    const lim = A.createDynamicsCompressor();
-    lim.threshold.value=-12; lim.knee.value=8; lim.ratio.value=14;
-    lim.attack.value=0.002; lim.release.value=0.3;
-    master.connect(lim); lim.connect(A.destination);
-
-    // 生成インパルス応答リバーブ（会場の空気感）
-    verb = A.createConvolver();
-    const len = A.sampleRate * 2.4;
-    const ir = A.createBuffer(2, len, A.sampleRate);
-    for (let c=0;c<2;c++){
-      const d=ir.getChannelData(c);
-      for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.2);
-    }
-    verb.buffer=ir;
-    vSend = A.createGain(); vSend.gain.value=0.38;
-    vSend.connect(verb); verb.connect(master);
+  let A=null,master=null,verb=null,vSend=null,nBuf=null,satCurve=null;
+  let muted=false,vol=0.7;
+  function boot(){
+    if(A)return A;
+    A=new(window.AudioContext||window.webkitAudioContext)();
+    master=A.createGain();master.gain.value=muted?0:vol;
+    const lim=A.createDynamicsCompressor();
+    lim.threshold.value=-12;lim.knee.value=8;lim.ratio.value=14;
+    lim.attack.value=0.002;lim.release.value=0.3;
+    master.connect(lim);lim.connect(A.destination);
+    verb=A.createConvolver();
+    const len=A.sampleRate*2.4,ir=A.createBuffer(2,len,A.sampleRate);
+    for(let c=0;c<2;c++){const d=ir.getChannelData(c);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.2);}
+    verb.buffer=ir;vSend=A.createGain();vSend.gain.value=0.38;
+    vSend.connect(verb);verb.connect(master);
     return A;
   }
   function applyGain(){if(master)master.gain.setTargetAtTime(muted?0:vol,A.currentTime,0.02)}
-  function noise(){
-    if(!nBuf){const l=A.sampleRate*2;nBuf=A.createBuffer(1,l,A.sampleRate);
-      const d=nBuf.getChannelData(0);for(let i=0;i<l;i++)d[i]=Math.random()*2-1;}
-    return nBuf;
-  }
-  function sat(){
-    const ws=A.createWaveShaper();
-    if(!satCurve){satCurve=new Float32Array(1024);
-      for(let i=0;i<1024;i++)satCurve[i]=Math.tanh((i/511.5-1)*3);}
-    ws.curve=satCurve; return ws;
-  }
-  // ステレオ定位 + dry/wet ルーティング
-  function route(x){
-    const mix=A.createGain(); mix.gain.value=1;
-    const pan=A.createStereoPanner?A.createStereoPanner():null;
-    if(pan){
-      pan.pan.value=Math.max(-.8,Math.min(.8,(x/W)*1.6-.8));
-      mix.connect(pan); pan.connect(master); pan.connect(vSend);
-    } else { mix.connect(master); mix.connect(vSend); }
-    return mix;
-  }
-
-  /* 打ち上げ「ヒューーー」（飛翔時間と同期、ビブラート＋風切り） */
-  function whistle(dur, x){
-    if(muted) return()=>{};
-    const ac=boot(), t0=ac.currentTime, mx=route(x);
-    const osc=ac.createOscillator(); osc.type="triangle";
-    osc.frequency.setValueAtTime(2300,t0);
-    osc.frequency.exponentialRampToValueAtTime(550,t0+dur);
-    const vib=ac.createOscillator(); vib.type="sine";
-    vib.frequency.setValueAtTime(19,t0); vib.frequency.linearRampToValueAtTime(8,t0+dur);
-    const vG=ac.createGain(); vG.gain.value=70;
-    vib.connect(vG); vG.connect(osc.frequency);
+  function noise(){if(!nBuf){const l=A.sampleRate*2;nBuf=A.createBuffer(1,l,A.sampleRate);const d=nBuf.getChannelData(0);for(let i=0;i<l;i++)d[i]=Math.random()*2-1;}return nBuf;}
+  function sat(){const ws=A.createWaveShaper();if(!satCurve){satCurve=new Float32Array(1024);for(let i=0;i<1024;i++)satCurve[i]=Math.tanh((i/511.5-1)*3);}ws.curve=satCurve;return ws;}
+  function route(x){const mix=A.createGain();mix.gain.value=1;const pan=A.createStereoPanner?A.createStereoPanner():null;if(pan){pan.pan.value=Math.max(-.8,Math.min(.8,(x/W)*1.6-.8));mix.connect(pan);pan.connect(master);pan.connect(vSend);}else{mix.connect(master);mix.connect(vSend);}return mix;}
+  function whistle(dur,x){
+    if(muted)return()=>{};
+    const ac=boot(),t0=ac.currentTime,mx=route(x);
+    const osc=ac.createOscillator();osc.type="triangle";
+    osc.frequency.setValueAtTime(2300,t0);osc.frequency.exponentialRampToValueAtTime(550,t0+dur);
+    const vib=ac.createOscillator();vib.type="sine";
+    vib.frequency.setValueAtTime(19,t0);vib.frequency.linearRampToValueAtTime(8,t0+dur);
+    const vG=ac.createGain();vG.gain.value=70;vib.connect(vG);vG.connect(osc.frequency);
     const oG=ac.createGain();
-    oG.gain.setValueAtTime(.0001,t0);
-    oG.gain.exponentialRampToValueAtTime(.1,t0+.12);
-    oG.gain.setValueAtTime(.1,t0+dur*.7);
-    oG.gain.exponentialRampToValueAtTime(.0001,t0+dur);
-    const ns=ac.createBufferSource(); ns.buffer=noise(); ns.loop=true;
-    const bp=ac.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=1.2;
-    bp.frequency.setValueAtTime(3200,t0);
-    bp.frequency.exponentialRampToValueAtTime(800,t0+dur);
+    oG.gain.setValueAtTime(.0001,t0);oG.gain.exponentialRampToValueAtTime(.1,t0+.12);
+    oG.gain.setValueAtTime(.1,t0+dur*.7);oG.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+    const ns=ac.createBufferSource();ns.buffer=noise();ns.loop=true;
+    const bp=ac.createBiquadFilter();bp.type="bandpass";bp.Q.value=1.2;
+    bp.frequency.setValueAtTime(3200,t0);bp.frequency.exponentialRampToValueAtTime(800,t0+dur);
     const nG=ac.createGain();
-    nG.gain.setValueAtTime(.0001,t0);
-    nG.gain.exponentialRampToValueAtTime(.045,t0+.2);
+    nG.gain.setValueAtTime(.0001,t0);nG.gain.exponentialRampToValueAtTime(.045,t0+.2);
     nG.gain.exponentialRampToValueAtTime(.0001,t0+dur);
     osc.connect(oG);oG.connect(mx);ns.connect(bp);bp.connect(nG);nG.connect(mx);
     osc.start(t0);vib.start(t0);ns.start(t0);
-    const te=t0+dur+.1; osc.stop(te);vib.stop(te);ns.stop(te);
-    return ()=>{const n=ac.currentTime;
-      oG.gain.cancelScheduledValues(n);nG.gain.cancelScheduledValues(n);
-      oG.gain.setTargetAtTime(.0001,n,.03);nG.gain.setTargetAtTime(.0001,n,.03);};
+    const te=t0+dur+.1;osc.stop(te);vib.stop(te);ns.stop(te);
+    return()=>{const n=ac.currentTime;oG.gain.cancelScheduledValues(n);nG.gain.cancelScheduledValues(n);oG.gain.setTargetAtTime(.0001,n,.03);nG.gain.setTargetAtTime(.0001,n,.03);};
   }
-
-  /* 開花「ドンッ」— 4層（アタック/重低音/サチュレーション破裂/遠雷余韻） */
-  function boom(sz=1, x){
+  function boom(sz=1,x){
     if(muted)return;
-    const ac=boot(), t0=ac.currentTime, mx=route(x);
-    // ①鋭いアタック
-    const a=ac.createBufferSource(); a.buffer=noise();
-    const ah=ac.createBiquadFilter(); ah.type="highpass"; ah.frequency.value=1500;
-    const aG=ac.createGain(); aG.gain.setValueAtTime(.55*sz,t0);
-    aG.gain.exponentialRampToValueAtTime(.0001,t0+.06);
-    a.connect(ah);ah.connect(aG);aG.connect(mx); a.start(t0);a.stop(t0+.08);
-    // ②重低音（ピッチ落下）
-    const sub=ac.createOscillator(); sub.type="sine";
-    sub.frequency.setValueAtTime(110/sz,t0);
-    sub.frequency.exponentialRampToValueAtTime(28,t0+.5*sz);
-    const sG=ac.createGain();
-    sG.gain.setValueAtTime(1.0*sz,t0);
-    sG.gain.exponentialRampToValueAtTime(.0001,t0+1.1*sz);
-    sub.connect(sG);sG.connect(mx); sub.start(t0);sub.stop(t0+1.2*sz);
-    // ③サチュレーション破裂
-    const bd=ac.createBufferSource(); bd.buffer=noise();
-    const sv=sat();
-    const lp=ac.createBiquadFilter(); lp.type="lowpass";
-    lp.frequency.setValueAtTime(5500,t0);
-    lp.frequency.exponentialRampToValueAtTime(120,t0+.8*sz);
-    const bG=ac.createGain();
-    bG.gain.setValueAtTime(.85*sz,t0);
-    bG.gain.exponentialRampToValueAtTime(.0001,t0+.9*sz);
-    bd.connect(sv);sv.connect(lp);lp.connect(bG);bG.connect(mx);
-    bd.start(t0);bd.stop(t0+sz);
-    // ④遠雷余韻
-    const ru=ac.createBufferSource(); ru.buffer=noise(); ru.loop=true;
-    const rl=ac.createBiquadFilter(); rl.type="lowpass"; rl.frequency.value=110;
+    const ac=boot(),t0=ac.currentTime,mx=route(x);
+    const a=ac.createBufferSource();a.buffer=noise();
+    const ah=ac.createBiquadFilter();ah.type="highpass";ah.frequency.value=1500;
+    const aG=ac.createGain();aG.gain.setValueAtTime(.55*sz,t0);aG.gain.exponentialRampToValueAtTime(.0001,t0+.06);
+    a.connect(ah);ah.connect(aG);aG.connect(mx);a.start(t0);a.stop(t0+.08);
+    const sub=ac.createOscillator();sub.type="sine";
+    sub.frequency.setValueAtTime(110/sz,t0);sub.frequency.exponentialRampToValueAtTime(28,t0+.5*sz);
+    const sG=ac.createGain();sG.gain.setValueAtTime(1.0*sz,t0);sG.gain.exponentialRampToValueAtTime(.0001,t0+1.1*sz);
+    sub.connect(sG);sG.connect(mx);sub.start(t0);sub.stop(t0+1.2*sz);
+    const bd=ac.createBufferSource();bd.buffer=noise();const sv=sat();
+    const lp=ac.createBiquadFilter();lp.type="lowpass";
+    lp.frequency.setValueAtTime(5500,t0);lp.frequency.exponentialRampToValueAtTime(120,t0+.8*sz);
+    const bG=ac.createGain();bG.gain.setValueAtTime(.85*sz,t0);bG.gain.exponentialRampToValueAtTime(.0001,t0+.9*sz);
+    bd.connect(sv);sv.connect(lp);lp.connect(bG);bG.connect(mx);bd.start(t0);bd.stop(t0+sz);
+    const ru=ac.createBufferSource();ru.buffer=noise();ru.loop=true;
+    const rl=ac.createBiquadFilter();rl.type="lowpass";rl.frequency.value=110;
     const rG=ac.createGain();
-    rG.gain.setValueAtTime(.0001,t0);
-    rG.gain.exponentialRampToValueAtTime(.32*sz,t0+.1);
+    rG.gain.setValueAtTime(.0001,t0);rG.gain.exponentialRampToValueAtTime(.32*sz,t0+.1);
     rG.gain.exponentialRampToValueAtTime(.0001,t0+2.2*sz);
-    ru.connect(rl);rl.connect(rG);rG.connect(mx); ru.start(t0);ru.stop(t0+2.4*sz);
+    ru.connect(rl);rl.connect(rG);rG.connect(mx);ru.start(t0);ru.stop(t0+2.4*sz);
   }
-
-  /* パチパチ（火花の弾け） */
-  function crackle(sz=1, x){
+  function crackle(sz=1,x){
     if(muted)return;
-    const ac=boot(), mx=route(x);
-    const n=Math.floor(8+Math.random()*10*sz);
+    const ac=boot(),mx=route(x),n=Math.floor(8+Math.random()*10*sz);
     for(let i=0;i<n;i++){
       const t=ac.currentTime+.15+Math.random()*1.4*sz;
-      const p=ac.createBufferSource(); p.buffer=noise();
-      const hp=ac.createBiquadFilter(); hp.type="highpass";
-      hp.frequency.value=3000+Math.random()*5000;
-      const g=ac.createGain();
-      g.gain.setValueAtTime(.05+Math.random()*.07,t);
-      g.gain.exponentialRampToValueAtTime(.0001,t+.04);
-      p.connect(hp);hp.connect(g);g.connect(mx); p.start(t);p.stop(t+.06);
+      const p=ac.createBufferSource();p.buffer=noise();
+      const hp=ac.createBiquadFilter();hp.type="highpass";hp.frequency.value=3000+Math.random()*5000;
+      const g=ac.createGain();g.gain.setValueAtTime(.05+Math.random()*.07,t);g.gain.exponentialRampToValueAtTime(.0001,t+.04);
+      p.connect(hp);hp.connect(g);g.connect(mx);p.start(t);p.stop(t+.06);
     }
   }
-
-  /* 噴水「シューーッ」（継続音、LFOで揺らぎ） */
-  function fountain(dur, x){
+  function fountain(dur,x){
     if(muted)return()=>{};
-    const ac=boot(), t0=ac.currentTime, mx=route(x);
-    const ns=ac.createBufferSource(); ns.buffer=noise(); ns.loop=true;
-    const bp=ac.createBiquadFilter(); bp.type="bandpass";
-    bp.frequency.value=1300; bp.Q.value=0.8;
-    const lfo=ac.createOscillator(); lfo.frequency.value=3.5;
-    const lG=ac.createGain(); lG.gain.value=380;
-    lfo.connect(lG);lG.connect(bp.frequency);
+    const ac=boot(),t0=ac.currentTime,mx=route(x);
+    const ns=ac.createBufferSource();ns.buffer=noise();ns.loop=true;
+    const bp=ac.createBiquadFilter();bp.type="bandpass";bp.frequency.value=1300;bp.Q.value=0.8;
+    const lfo=ac.createOscillator();lfo.frequency.value=3.5;
+    const lG=ac.createGain();lG.gain.value=380;lfo.connect(lG);lG.connect(bp.frequency);
     const g=ac.createGain();
-    g.gain.setValueAtTime(.0001,t0);
-    g.gain.exponentialRampToValueAtTime(.18,t0+.3);
-    g.gain.setValueAtTime(.18,t0+dur-.5);
-    g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
-    ns.connect(bp);bp.connect(g);g.connect(mx);
-    ns.start(t0);lfo.start(t0); ns.stop(t0+dur+.1);lfo.stop(t0+dur+.1);
-    return()=>{const n=ac.currentTime;
-      g.gain.cancelScheduledValues(n);g.gain.setTargetAtTime(.0001,n,.1);};
+    g.gain.setValueAtTime(.0001,t0);g.gain.exponentialRampToValueAtTime(.18,t0+.3);
+    g.gain.setValueAtTime(.18,t0+dur-.5);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+    ns.connect(bp);bp.connect(g);g.connect(mx);ns.start(t0);lfo.start(t0);
+    ns.stop(t0+dur+.1);lfo.stop(t0+dur+.1);
+    return()=>{const n=ac.currentTime;g.gain.cancelScheduledValues(n);g.gain.setTargetAtTime(.0001,n,.1);};
   }
-
-  return {
-    unlock:boot, whistle, boom, crackle, fountain,
+  return{
+    unlock:boot,whistle,boom,crackle,fountain,
     setMuted(m){muted=m;if(A)applyGain()},
     setVol(v){vol=v;if(A)applyGain()},
     get muted(){return muted},
@@ -428,89 +358,50 @@ const Sfx = (() => {
 })();
 
 /* ================================================================
- * Canvas 設定
- * fx  = 花火専用オフスクリーン（残像込み、lighter合成で輝度加算）
- * ctx = メイン合成キャンバス
- * HZ  = 水平線のY座標
+ * Canvas
  * ================================================================ */
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const fx = document.createElement("canvas");
-const fxc = fx.getContext("2d");
-let W,H,DPR,HZ;
-const R = (a,b)=>a+Math.random()*(b-a);
-let stars=[], gradCache={};
-
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+const fx=document.createElement("canvas"),fxc=fx.getContext("2d");
+let W,H,DPR,HZ,stars=[],gradC={};
+const R=(a,b)=>a+Math.random()*(b-a);
 function resize(){
-  DPR=Math.min(window.devicePixelRatio||1,2);
-  W=window.innerWidth; H=window.innerHeight; HZ=Math.round(H*.742);
+  DPR=Math.min(window.devicePixelRatio||1,2);W=window.innerWidth;H=window.innerHeight;HZ=Math.round(H*.742);
   [canvas,fx].forEach(c=>{c.width=W*DPR;c.height=H*DPR;});
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  fxc.setTransform(DPR,0,0,DPR,0,0);
-  gradCache={};
-  stars=[];
-  const n=Math.floor(W*HZ/8000);
-  for(let i=0;i<n;i++) stars.push({
-    x:Math.random()*W, y:Math.random()*HZ*.94,
-    r:Math.random()<.85?R(.35,.85):R(.9,1.7),
-    ph:Math.random()*Math.PI*2, sp:R(.3,1.5),
-  });
+  ctx.setTransform(DPR,0,0,DPR,0,0);fxc.setTransform(DPR,0,0,DPR,0,0);gradC={};
+  stars=[];const n=Math.floor(W*HZ/8000);
+  for(let i=0;i<n;i++)stars.push({x:Math.random()*W,y:Math.random()*HZ*.94,r:Math.random()<.85?R(.35,.85):R(.9,1.7),ph:Math.random()*Math.PI*2,sp:R(.3,1.5)});
 }
-window.addEventListener("resize",resize); resize();
+window.addEventListener("resize",resize);resize();
 
 /* ================================================================
- * 花火エンティティ
+ * Entities
  * ================================================================ */
-const rockets=[], particles=[], flashes=[], fountainObjs=[], ripples=[];
-const MAX_P=3800;
-const GRAVITY=0.06;
-const COLORS=[
-  ["#ff5252","#ffd180"],["#69f0ae","#b9f6ca"],["#40c4ff","#80d8ff"],
-  ["#ffd740","#ffff8d"],["#ff4081","#ff80ab"],["#e040fb","#ea80fc"],["#fff","#b3e5fc"],
-];
+const rockets=[],particles=[],flashes=[],fountainObjs=[],ripples=[];
+const MAX_P=3800,GRAVITY=0.06;
+const COLORS=[["#ff5252","#ffd180"],["#69f0ae","#b9f6ca"],["#40c4ff","#80d8ff"],["#ffd740","#ffff8d"],["#ff4081","#ff80ab"],["#e040fb","#ea80fc"],["#fff","#b3e5fc"]];
 const TYPES_K=["peony","chrys","willow","ring","heart","senrin","change"];
 
-/* ── 水面波紋 ── */
 class Ripple{
-  constructor(x,color){
-    this.x=x; this.r=2; this.life=1;
-    this.spd=R(14,26); this.color=color||"rgba(180,200,255,.6)";
-  }
-  update(dt){this.r+=this.spd*dt; this.life-=1.7*dt; return this.life>0;}
-  draw(){
-    ctx.globalAlpha=this.life*.5;
-    ctx.strokeStyle=this.color; ctx.lineWidth=1+this.life;
-    ctx.beginPath();
-    ctx.ellipse(this.x,HZ,this.r*2.8,this.r*.45,0,0,Math.PI*2);
-    ctx.stroke(); ctx.globalAlpha=1;
-  }
+  constructor(x,color){this.x=x;this.r=2;this.life=1;this.spd=R(14,26);this.color=color||"rgba(180,200,255,.6)";}
+  update(dt){this.r+=this.spd*dt;this.life-=1.7*dt;return this.life>0;}
+  draw(){ctx.globalAlpha=this.life*.5;ctx.strokeStyle=this.color;ctx.lineWidth=1+this.life;ctx.beginPath();ctx.ellipse(this.x,HZ,this.r*2.8,this.r*.45,0,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
 }
 
-/* ── Particle ── */
 class Particle{
   constructor(x,y,vx,vy,color,sz,o={}){
-    this.x=x;this.y=y;this.px=x;this.py=y;
-    this.vx=vx;this.vy=vy;
-    this.color=color;this.color2=o.color2||null;
-    this.life=1;
-    this.decay=R(.45,.85)/sz*(o.dm||1);
-    this.r=o.r||R(1.2,2.4);
+    this.x=x;this.y=y;this.px=x;this.py=y;this.vx=vx;this.vy=vy;
+    this.color=color;this.color2=o.color2||null;this.life=1;
+    this.decay=R(.45,.85)/sz*(o.dm||1);this.r=o.r||R(1.2,2.4);
     this.twinkle=o.twinkle!==undefined?o.twinkle:Math.random()<.3;
-    this.drag=o.drag||.985;
-    this.grav=o.grav!==undefined?o.grav:.035;
-    this.trail=o.trail||false;
-    this.child=o.child||false;
+    this.drag=o.drag||.985;this.grav=o.grav!==undefined?o.grav:.035;
+    this.trail=o.trail||false;this.child=o.child||false;
   }
   update(dt){
-    this.px=this.x;this.py=this.y;
-    this.vx*=this.drag;
+    this.px=this.x;this.py=this.y;this.vx*=this.drag;
     this.vy=this.vy*this.drag+this.grav*dt*60;
-    this.x+=this.vx*dt*60; this.y+=this.vy*dt*60;
-    // 水面に着水 → 波紋を残して消える
-    if(this.y>=HZ){
-      if(this.life>.2) ripples.push(new Ripple(this.x,this.color));
-      return false;
-    }
+    this.x+=this.vx*dt*60;this.y+=this.vy*dt*60;
+    if(this.y>=HZ){if(this.life>.2)ripples.push(new Ripple(this.x,this.color));return false;}
     this.life-=this.decay*dt;
     if(this.life<=0){if(this.child)miniBurst(this.x,this.y,this.color);return false;}
     return true;
@@ -519,385 +410,294 @@ class Particle{
     const a=this.twinkle&&Math.random()<.25?this.life*.3:this.life;
     fxc.globalAlpha=Math.max(a,0);
     const col=this.color2&&this.life<.55?this.color2:this.color;
-    if(this.trail){
-      fxc.strokeStyle=col;fxc.lineWidth=Math.max(this.r*this.life,.3);fxc.lineCap="round";
-      fxc.beginPath();fxc.moveTo(this.px,this.py);fxc.lineTo(this.x,this.y);fxc.stroke();
-    } else {
-      fxc.fillStyle=col;fxc.beginPath();
-      fxc.arc(this.x,this.y,this.r*this.life,0,Math.PI*2);fxc.fill();
-    }
+    if(this.trail){fxc.strokeStyle=col;fxc.lineWidth=Math.max(this.r*this.life,.3);fxc.lineCap="round";fxc.beginPath();fxc.moveTo(this.px,this.py);fxc.lineTo(this.x,this.y);fxc.stroke();}
+    else{fxc.fillStyle=col;fxc.beginPath();fxc.arc(this.x,this.y,this.r*this.life,0,Math.PI*2);fxc.fill();}
   }
 }
-
 function addP(p){if(particles.length<MAX_P)particles.push(p);}
-
 function miniBurst(x,y,color){
   Sfx.crackle(.5,x);
-  for(let i=0;i<10;i++){
-    const a=(Math.PI*2*i)/10+R(-.2,.2),v=R(.8,1.8)*(H/800);
-    addP(new Particle(x,y,Math.cos(a)*v,Math.sin(a)*v,color,.6,{dm:1.4,twinkle:true,r:1.4}));
-  }
+  for(let i=0;i<10;i++){const a=(Math.PI*2*i)/10+R(-.2,.2),v=R(.8,1.8)*(H/800);addP(new Particle(x,y,Math.cos(a)*v,Math.sin(a)*v,color,.6,{dm:1.4,twinkle:true,r:1.4}));}
 }
 
-/* ── 噴水花火 ── */
 class Fountain{
-  constructor(x,dur=4.5){
-    this.x=x;this.t=0;this.dur=dur;
-    this.cols=Math.random()<.7?["#ffd180","#ffe9b8","#ffab40"]:["#b9f6ca","#e8fff1","#69f0ae"];
-    this.stopSnd=Sfx.fountain(dur,x);
-  }
+  constructor(x,dur=4.5){this.x=x;this.t=0;this.dur=dur;this.cols=Math.random()<.7?["#ffd180","#ffe9b8","#ffab40"]:["#b9f6ca","#e8fff1","#69f0ae"];this.stopSnd=Sfx.fountain(dur,x);}
   update(dt){
-    this.t+=dt;
-    if(this.t>=this.dur){this.stopSnd();return false;}
-    const env=Math.min(this.t/.5,1)*Math.min((this.dur-this.t)/.6,1);
-    const n=Math.round(6*env)+1;
+    this.t+=dt;if(this.t>=this.dur){this.stopSnd();return false;}
+    const env=Math.min(this.t/.5,1)*Math.min((this.dur-this.t)/.6,1),n=Math.round(6*env)+1;
     for(let i=0;i<n;i++){
-      const v=R(3.2,7.5)*(H/800)*(0.5+env*.5);
-      const a=-Math.PI/2+R(-.22,.22);
-      addP(new Particle(this.x+R(-2,2),HZ-1,
-        Math.cos(a)*v,Math.sin(a)*v,
-        this.cols[(Math.random()*this.cols.length)|0],.8,
-        {trail:true,drag:.99,grav:.05,dm:R(1.2,2.2),twinkle:true,r:R(.8,1.8)}));
+      const v=R(3.2,7.5)*(H/800)*(0.5+env*.5),a=-Math.PI/2+R(-.22,.22);
+      addP(new Particle(this.x+R(-2,2),HZ-1,Math.cos(a)*v,Math.sin(a)*v,this.cols[(Math.random()*this.cols.length)|0],.8,{trail:true,drag:.99,grav:.05,dm:R(1.2,2.2),twinkle:true,r:R(.8,1.8)}));
     }
     return true;
   }
 }
 
-/* ── Rocket ── */
 class Rocket{
   constructor(tx,ty,scatter=0,type="random"){
     this.type=type==="random"?TYPES_K[(Math.random()*TYPES_K.length)|0]:type;
-    this.x=tx+R(-scatter,scatter); this.y=HZ+3;
-    this.targetY=Math.min(ty,HZ-60);
-    this.sz=R(.7,1.5);
-    const h=this.y-this.targetY;
-    this.vy=-Math.sqrt(2*GRAVITY*Math.max(h,40)); this.vx=0;
-    this.colors=COLORS[(Math.random()*COLORS.length)|0];
-    this.trail=[];
-    this.flightTime=(-this.vy/GRAVITY)/60;
-    this.stopW=Sfx.whistle(this.flightTime,this.x);
+    this.x=tx+R(-scatter,scatter);this.y=HZ+3;this.targetY=Math.min(ty,HZ-60);this.sz=R(.7,1.5);
+    const h=this.y-this.targetY;this.vy=-Math.sqrt(2*GRAVITY*Math.max(h,40));this.vx=0;
+    this.colors=COLORS[(Math.random()*COLORS.length)|0];this.trail=[];
+    this.flightTime=(-this.vy/GRAVITY)/60;this.stopW=Sfx.whistle(this.flightTime,this.x);
   }
   update(dt){
-    this.trail.push({x:this.x,y:this.y,life:1});
-    if(this.trail.length>20)this.trail.shift();
+    this.trail.push({x:this.x,y:this.y,life:1});if(this.trail.length>20)this.trail.shift();
     for(const t of this.trail)t.life-=dt*3;
-    this.vy+=GRAVITY*dt*60; this.x+=this.vx*dt*60; this.y+=this.vy*dt*60;
-    if(this.y<=this.targetY||this.vy>=-.3){this.explode();return false;}
-    return true;
+    this.vy+=GRAVITY*dt*60;this.x+=this.vx*dt*60;this.y+=this.vy*dt*60;
+    if(this.y<=this.targetY||this.vy>=-.3){this.explode();return false;}return true;
   }
   explode(){
-    this.stopW(); Sfx.boom(this.sz,this.x);
+    this.stopW();Sfx.boom(this.sz,this.x);
     if(this.type!=="willow")Sfx.crackle(this.sz,this.x);
-    const[c1,c2]=this.colors;
-    const spd=(2.6+1.9*this.sz)*(H/800);
+    const[c1,c2]=this.colors,spd=(2.6+1.9*this.sz)*(H/800);
     const push=(vx,vy,col,o)=>addP(new Particle(this.x,this.y,vx,vy,col,this.sz,o));
     switch(this.type){
-      case"chrys":{
-        const n=Math.floor(90+70*this.sz);
-        for(let i=0;i<n;i++){
-          const a=(Math.PI*2*i)/n+R(-.04,.04),v=spd*(.6+Math.random()*.4);
-          push(Math.cos(a)*v,Math.sin(a)*v,Math.random()<.7?c1:c2,{trail:true,drag:.98});
-        }break;}
-      case"willow":{
-        const n=Math.floor(100+70*this.sz);
-        for(let i=0;i<n;i++){
-          const a=(Math.PI*2*i)/n+R(-.1,.1),v=spd*.75*(.5+Math.random()*.5);
-          push(Math.cos(a)*v,Math.sin(a)*v,Math.random()<.85?"#ffd180":"#ffab40",
-            {trail:true,drag:.97,grav:.020,dm:.43,twinkle:false});
-        }break;}
-      case"ring":{
-        const n=Math.floor(55+35*this.sz),tilt=R(.35,1),rot=R(0,Math.PI);
-        for(let i=0;i<n;i++){
-          const a=(Math.PI*2*i)/n;
-          const ex=Math.cos(a)*spd,ey=Math.sin(a)*spd*tilt;
-          push(ex*Math.cos(rot)-ey*Math.sin(rot),ex*Math.sin(rot)+ey*Math.cos(rot),c1,{dm:.9});
-        }break;}
-      case"heart":{
-        const n=Math.floor(65+35*this.sz);
-        for(let i=0;i<n;i++){
-          const a=(Math.PI*2*i)/n;
-          const hx=16*Math.pow(Math.sin(a),3);
-          const hy=-(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a));
-          push(hx*(spd/16)*R(.95,1.05),hy*(spd/16)*R(.95,1.05),
-            Math.random()<.8?"#ff4081":"#ff80ab",{drag:.99,grav:.02,dm:.8});
-        }break;}
-      case"senrin":{
-        const n=Math.floor(15+9*this.sz);
-        for(let i=0;i<n;i++){
-          const a=(Math.PI*2*i)/n+R(-.1,.1),v=spd*.8*(.6+Math.random()*.4);
-          push(Math.cos(a)*v,Math.sin(a)*v,c1,{child:true,dm:1.3,r:2.4,twinkle:false});
-        }break;}
-      case"change":{
-        const n=Math.floor(80+70*this.sz);
-        const alt=COLORS[(Math.random()*COLORS.length)|0][0];
-        for(let i=0;i<n;i++){
-          const a=(Math.PI*2*i)/n+R(-.05,.05),v=spd*(.55+Math.random()*.45);
-          push(Math.cos(a)*v,Math.sin(a)*v,c1,{color2:alt,dm:.8});
-        }break;}
-      default:{
-        const n=Math.floor(80+70*this.sz);
-        for(let i=0;i<n;i++){
-          const a=(Math.PI*2*i)/n+R(-.05,.05),v=spd*(.55+Math.random()*.45);
-          push(Math.cos(a)*v,Math.sin(a)*v,Math.random()<.7?c1:c2,{});
-        }
-      }
+      case"chrys":{const n=Math.floor(90+70*this.sz);for(let i=0;i<n;i++){const a=(Math.PI*2*i)/n+R(-.04,.04),v=spd*(.6+Math.random()*.4);push(Math.cos(a)*v,Math.sin(a)*v,Math.random()<.7?c1:c2,{trail:true,drag:.98});}break;}
+      case"willow":{const n=Math.floor(100+70*this.sz);for(let i=0;i<n;i++){const a=(Math.PI*2*i)/n+R(-.1,.1),v=spd*.75*(.5+Math.random()*.5);push(Math.cos(a)*v,Math.sin(a)*v,Math.random()<.85?"#ffd180":"#ffab40",{trail:true,drag:.97,grav:.020,dm:.43,twinkle:false});}break;}
+      case"ring":{const n=Math.floor(55+35*this.sz),tilt=R(.35,1),rot=R(0,Math.PI);for(let i=0;i<n;i++){const a=(Math.PI*2*i)/n,ex=Math.cos(a)*spd,ey=Math.sin(a)*spd*tilt;push(ex*Math.cos(rot)-ey*Math.sin(rot),ex*Math.sin(rot)+ey*Math.cos(rot),c1,{dm:.9});}break;}
+      case"heart":{const n=Math.floor(65+35*this.sz);for(let i=0;i<n;i++){const a=(Math.PI*2*i)/n,hx=16*Math.pow(Math.sin(a),3),hy=-(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a));push(hx*(spd/16)*R(.95,1.05),hy*(spd/16)*R(.95,1.05),Math.random()<.8?"#ff4081":"#ff80ab",{drag:.99,grav:.02,dm:.8});}break;}
+      case"senrin":{const n=Math.floor(15+9*this.sz);for(let i=0;i<n;i++){const a=(Math.PI*2*i)/n+R(-.1,.1),v=spd*.8*(.6+Math.random()*.4);push(Math.cos(a)*v,Math.sin(a)*v,c1,{child:true,dm:1.3,r:2.4,twinkle:false});}break;}
+      case"change":{const n=Math.floor(80+70*this.sz),alt=COLORS[(Math.random()*COLORS.length)|0][0];for(let i=0;i<n;i++){const a=(Math.PI*2*i)/n+R(-.05,.05),v=spd*(.55+Math.random()*.45);push(Math.cos(a)*v,Math.sin(a)*v,c1,{color2:alt,dm:.8});}break;}
+      default:{const n=Math.floor(80+70*this.sz);for(let i=0;i<n;i++){const a=(Math.PI*2*i)/n+R(-.05,.05),v=spd*(.55+Math.random()*.45);push(Math.cos(a)*v,Math.sin(a)*v,Math.random()<.7?c1:c2,{});}}
     }
     flashes.push({x:this.x,y:this.y,r:34*this.sz,life:1});
   }
   draw(){
-    for(let i=0;i<this.trail.length;i++){
-      const t=this.trail[i];if(t.life<=0)continue;
-      fxc.globalAlpha=t.life*.5;fxc.fillStyle="#ffcf8a";
-      fxc.beginPath();fxc.arc(t.x,t.y,1.2*(i/this.trail.length)+.4,0,Math.PI*2);fxc.fill();
-    }
-    fxc.globalAlpha=1;fxc.fillStyle="#fff4d6";
-    fxc.beginPath();fxc.arc(this.x,this.y,2.2,0,Math.PI*2);fxc.fill();
+    for(let i=0;i<this.trail.length;i++){const t=this.trail[i];if(t.life<=0)continue;fxc.globalAlpha=t.life*.5;fxc.fillStyle="#ffcf8a";fxc.beginPath();fxc.arc(t.x,t.y,1.2*(i/this.trail.length)+.4,0,Math.PI*2);fxc.fill();}
+    fxc.globalAlpha=1;fxc.fillStyle="#fff4d6";fxc.beginPath();fxc.arc(this.x,this.y,2.2,0,Math.PI*2);fxc.fill();
   }
 }
 
 /* ================================================================
- * 背景・海・反射レンダリング
- * 描画順:
- *   ①空グラデーション+星
- *   ②花火レイヤー(fx, lighter加算)        ← 全画面に描くが
- *   ③海グラデーション(HZ〜H, source-over) ← 海が水面以下を上書きで隠す
- *   ④水面反射(lighter, fx上部をサンプル)
- *   ⑤水面エフェクト（きらめき・波紋）
+ * Background / Sea / Reflection
  * ================================================================ */
-function bg(time){
-  // ──① 空
-  if(!gradCache.sky||gradCache.h!==H){
-    const g=ctx.createLinearGradient(0,0,0,HZ);
-    g.addColorStop(0,"#03030d"); g.addColorStop(.65,"#09091f"); g.addColorStop(1,"#131330");
-    gradCache.sky=g; gradCache.h=H;
-  }
-  ctx.fillStyle=gradCache.sky; ctx.fillRect(0,0,W,HZ);
-  // 星
-  for(const s of stars){
-    const tw=.3+.5*(0.5+0.5*Math.sin(time*s.sp+s.ph));
-    ctx.globalAlpha=tw; ctx.fillStyle="#cdd6ff";
-    ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();
-  }
+function drawBg(time){
+  if(!gradC.sky||gradC.h!==H){const g=ctx.createLinearGradient(0,0,0,HZ);g.addColorStop(0,"#03030d");g.addColorStop(.65,"#09091f");g.addColorStop(1,"#131330");gradC.sky=g;gradC.h=H;}
+  ctx.fillStyle=gradC.sky;ctx.fillRect(0,0,W,HZ);
+  for(const s of stars){const tw=.3+.5*(0.5+0.5*Math.sin(time*s.sp+s.ph));ctx.globalAlpha=tw;ctx.fillStyle="#cdd6ff";ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();}
   ctx.globalAlpha=1;
 }
-
-function sea(){
-  if(!gradCache.sea||gradCache.hh!==H){
-    const g=ctx.createLinearGradient(0,HZ,0,H);
-    g.addColorStop(0,"#0f1228"); g.addColorStop(.45,"#0a0b1c"); g.addColorStop(1,"#050510");
-    gradCache.sea=g; gradCache.hh=H;
-  }
-  ctx.fillStyle=gradCache.sea; ctx.fillRect(0,HZ,W,H-HZ);
+function drawSea(){
+  if(!gradC.sea||gradC.hh!==H){const g=ctx.createLinearGradient(0,HZ,0,H);g.addColorStop(0,"#0f1228");g.addColorStop(.45,"#0a0b1c");g.addColorStop(1,"#050510");gradC.sea=g;gradC.hh=H;}
+  ctx.fillStyle=gradC.sea;ctx.fillRect(0,HZ,W,H-HZ);
 }
-
-function reflection(time){
-  const seaH=H-HZ;
-  ctx.save();
-  ctx.globalCompositeOperation="lighter";
-  const strip=3;
-  for(let y=HZ;y<H;y+=strip){
-    const depth=(y-HZ)/seaH;                              // 0=水際 … 1=手前
-    // 反射元: 水面から深さに比例した距離だけ空側を参照（上下反転・やや圧縮）
-    const srcY=HZ-(y-HZ)*.9-strip;
+function drawReflection(time){
+  const seaH=H-HZ;ctx.save();ctx.globalCompositeOperation="lighter";
+  for(let y=HZ;y<H;y+=3){
+    const depth=(y-HZ)/seaH,srcY=HZ-(y-HZ)*.9-3;
     if(srcY<0)continue;
-    // 横揺れ（手前ほど大きく＋複数波の重ね合わせ）
-    const sway=
-      Math.sin(y*.055+time*1.6)*(2+depth*10)+
-      Math.sin(y*.013-time*.75)*(1.5+depth*5)+
-      Math.sin(y*.12+time*2.3)*(depth*2);
-    // アルファ：水際で最大、手前へ自然減衰
+    const sway=Math.sin(y*.055+time*1.6)*(2+depth*10)+Math.sin(y*.013-time*.75)*(1.5+depth*5)+Math.sin(y*.12+time*2.3)*(depth*2);
     ctx.globalAlpha=(.52*Math.pow(1-depth,1.1)+.04)*.8;
-    ctx.drawImage(fx,
-      0,srcY*DPR,fx.width,strip*DPR,
-      sway,y,W,strip);
+    ctx.drawImage(fx,0,srcY*DPR,fx.width,3*DPR,sway,y,W,3);
   }
-  ctx.restore();
-  ctx.globalAlpha=1;
+  ctx.restore();ctx.globalAlpha=1;
 }
-
-function seaSurface(time){
-  const seaH=H-HZ;
-  ctx.globalCompositeOperation="lighter";
-  // 水平線の光（花火の環境光が海面を照らす）
+function drawSeaSurface(time){
+  const seaH=H-HZ;ctx.globalCompositeOperation="lighter";
   const hl=ctx.createLinearGradient(0,HZ-10,0,HZ+16);
-  hl.addColorStop(0,"rgba(100,120,200,0)");
-  hl.addColorStop(.5,"rgba(140,160,255,.1)");
-  hl.addColorStop(1,"rgba(100,120,200,0)");
-  ctx.fillStyle=hl; ctx.fillRect(0,HZ-10,W,26);
-  // ゆっくり流れる波のきらめき（黄金角でばらした14本）
+  hl.addColorStop(0,"rgba(100,120,200,0)");hl.addColorStop(.5,"rgba(140,160,255,.1)");hl.addColorStop(1,"rgba(100,120,200,0)");
+  ctx.fillStyle=hl;ctx.fillRect(0,HZ-10,W,26);
   for(let i=0;i<14;i++){
-    const ph=i*2.39996;
-    const yy=HZ+8+((Math.sin(time*.21+ph)*.5+.5)**1.6)*(seaH-18);
-    const xx=(ph*997+time*(5+i*2.5))%(W+180)-90;
-    const len=28+(yy-HZ)*.85;
-    const a=(.048*(1-(yy-HZ)/seaH)+.01);
+    const ph=i*2.39996,yy=HZ+8+((Math.sin(time*.21+ph)*.5+.5)**1.6)*(seaH-18),xx=(ph*997+time*(5+i*2.5))%(W+180)-90,len=28+(yy-HZ)*.85,a=(.048*(1-(yy-HZ)/seaH)+.01);
     const wg=ctx.createLinearGradient(xx-len,yy,xx+len,yy);
-    wg.addColorStop(0,"rgba(170,195,255,0)");
-    wg.addColorStop(.5,`rgba(195,215,255,${(a*3).toFixed(3)})`);
-    wg.addColorStop(1,"rgba(170,195,255,0)");
-    ctx.strokeStyle=wg; ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(xx-len,yy);ctx.lineTo(xx+len,yy);ctx.stroke();
+    wg.addColorStop(0,"rgba(170,195,255,0)");wg.addColorStop(.5,`rgba(195,215,255,${(a*3).toFixed(3)})`);wg.addColorStop(1,"rgba(170,195,255,0)");
+    ctx.strokeStyle=wg;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(xx-len,yy);ctx.lineTo(xx+len,yy);ctx.stroke();
   }
   ctx.globalCompositeOperation="source-over";
-  // 波紋
   for(const r of ripples)r.draw();
 }
 
 /* ================================================================
- * メインループ
+ * Main loop
  * ================================================================ */
 let last=performance.now();
 function frame(now){
-  const dt=Math.min((now-last)/1000,.05); last=now;
-  const time=now/1000;
-
-  // ─ fx (オフスクリーン) 更新 ─
-  fxc.globalCompositeOperation="destination-out";
-  fxc.globalAlpha=1; fxc.fillStyle="rgba(0,0,0,.22)"; fxc.fillRect(0,0,W,H);
+  const dt=Math.min((now-last)/1000,.05);last=now;const time=now/1000;
+  fxc.globalCompositeOperation="destination-out";fxc.globalAlpha=1;fxc.fillStyle="rgba(0,0,0,.22)";fxc.fillRect(0,0,W,H);
   fxc.globalCompositeOperation="lighter";
   for(let i=fountainObjs.length-1;i>=0;i--)if(!fountainObjs[i].update(dt))fountainObjs.splice(i,1);
   for(let i=rockets.length-1;i>=0;i--){if(!rockets[i].update(dt))rockets.splice(i,1);else rockets[i].draw();}
   for(let i=particles.length-1;i>=0;i--){if(!particles[i].update(dt))particles.splice(i,1);else particles[i].draw();}
   for(let i=flashes.length-1;i>=0;i--){
-    const f=flashes[i];f.life-=dt*5;
-    if(f.life<=0){flashes.splice(i,1);continue;}
-    fxc.globalAlpha=f.life*.6;
-    const g=fxc.createRadialGradient(f.x,f.y,0,f.x,f.y,f.r*(2-f.life));
+    const f=flashes[i];f.life-=dt*5;if(f.life<=0){flashes.splice(i,1);continue;}
+    fxc.globalAlpha=f.life*.6;const g=fxc.createRadialGradient(f.x,f.y,0,f.x,f.y,f.r*(2-f.life));
     g.addColorStop(0,"rgba(255,255,255,.9)");g.addColorStop(1,"rgba(255,255,255,0)");
     fxc.fillStyle=g;fxc.beginPath();fxc.arc(f.x,f.y,f.r*(2-f.life),0,Math.PI*2);fxc.fill();
   }
-  fxc.globalCompositeOperation="source-over"; fxc.globalAlpha=1;
-
-  // 波紋更新
+  fxc.globalCompositeOperation="source-over";fxc.globalAlpha=1;
   for(let i=ripples.length-1;i>=0;i--)if(!ripples[i].update(dt))ripples.splice(i,1);
-
-  // ─ メインキャンバス合成 ─
-  bg(time);                                               // ①空+星
-  ctx.globalCompositeOperation="lighter";
-  ctx.drawImage(fx,0,0,fx.width,fx.height,0,0,W,H);      // ②花火(加算)
+  drawBg(time);
+  ctx.globalCompositeOperation="lighter";ctx.drawImage(fx,0,0,fx.width,fx.height,0,0,W,H);
   ctx.globalCompositeOperation="source-over";
-  sea();                                                  // ③海（水面以下の花火を自然に隠す）
-  reflection(time);                                       // ④反射
-  seaSurface(time);                                       // ⑤波面エフェクト
-
+  drawSea();drawReflection(time);drawSeaSurface(time);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 /* ================================================================
- * マルチプレイヤー（Firebase Realtime Database）
- * FB_CONFIG が null のときはソロモードで動作。
+ * Multiplayer — Supabase Broadcast + Presence + RPC
  * ================================================================ */
-let soloTotal=parseInt(localStorage.getItem("fw_total")||"0");
-const sTotalEl=document.getElementById("sTotal");
-const sOnlineEl=document.getElementById("sOnline");
-const badgeEl=document.getElementById("badge");
+const uid=sessionStorage.getItem("fw_uid")||Math.random().toString(36).slice(2);
+sessionStorage.setItem("fw_uid",uid);
 
-// ソロモードのカウンター表示
-sTotalEl.textContent=soloTotal.toLocaleString();
+let soloMode = false;   // ユーザーが手動でソロに切り替えた状態
+let viewOnly = false;   // 満員で観覧のみ
+let joined   = false;   // Presence に track 済み
+let sbClient = null, sbChan = null;
+let pendingTotal = 0;   // SDK ロード前に発生した発数
 
-const CAPACITY = 100; // 定員
-let viewOnly = false; // 観覧モードフラグ
+// 累計カウンターのローカルキャッシュ（楽観的更新）
+let localTotal = parseInt(localStorage.getItem("fw_total") || "0");
 
-const fullOverlay = document.getElementById("full-overlay");
-const fullNow     = document.getElementById("full-now");
-const viewBanner  = document.getElementById("view-banner");
+const sTotalEl  = document.getElementById("sTotal");
+const sOnlineEl = document.getElementById("sOnline");
+const connCell  = document.getElementById("connCell");
+const connLabel = document.getElementById("connLabel");
+const connSub   = document.getElementById("connSub");
+const soloBtn   = document.getElementById("soloBtn");
+const soloDivider = document.getElementById("soloDivider");
+const viewBanner = document.getElementById("viewBanner");
 
-function enterViewOnly(){
-  viewOnly = true;
-  viewBanner.classList.add("show");
-  // ボトムバーを非表示（打ち上げ不要）
-  document.getElementById("bar").style.display = "none";
-  document.getElementById("hint").classList.add("gone");
-  canvas.style.cursor = "default";
-  badgeEl.textContent = "観覧モード";
-  badgeEl.classList.add("full");
+// ── 接続状態の表示を更新 ──
+function setConnState(state){
+  connCell.className="";
+  if(state==="live"){
+    connCell.classList.add("live");
+    connLabel.textContent="ライブ";
+    connSub.textContent="タップでソロ切替";
+    soloBtn.textContent="ソロへ"; soloBtn.classList.remove("solo-on");
+  } else if(state==="solo"){
+    connCell.classList.add("solo");
+    connLabel.textContent="ソロ";
+    connSub.textContent="タップでライブ復帰";
+    soloBtn.textContent="ライブへ"; soloBtn.classList.add("solo-on");
+  } else if(state==="full"){
+    connCell.classList.add("full");
+    connLabel.textContent="満員";
+    connSub.textContent="観覧モード";
+  } else {
+    connLabel.textContent="接続中";
+    connSub.textContent="";
+  }
 }
 
-document.getElementById("full-watch").addEventListener("click", () => {
-  fullOverlay.classList.remove("show");
-  enterViewOnly();
-});
+// ── 参加者数 / 累計をセット ──
+function setOnline(n){ sOnlineEl.textContent = n==null ? "—" : String(n); }
+function setTotal(n){
+  localTotal = n;
+  localStorage.setItem("fw_total", n);
+  sTotalEl.textContent = n.toLocaleString();
+}
 
-const Multi=(()=>{
-  if(!SB_URL||!SB_KEY){
-    return {
-      broadcast:()=>{},
-      incTotal(){
-        soloTotal++;
-        localStorage.setItem("fw_total",soloTotal);
-        sTotalEl.textContent=soloTotal.toLocaleString();
-      },
-      isLive:false,
-    };
+// ── ソロ / ライブ 切り替え ──
+function toggleSolo(){
+  if(viewOnly) return;
+  soloMode = !soloMode;
+  if(soloMode){
+    if(joined && sbChan){ sbChan.untrack(); joined=false; }
+    setConnState("solo");
+    setOnline(null);
+  } else {
+    if(sbChan && !joined){ sbChan.track({uid, t:Date.now()}); joined=true; }
+    setConnState("live");
   }
+}
+connCell.addEventListener("click", toggleSolo);
+soloBtn.addEventListener("click",  toggleSolo);
 
-  const uid=sessionStorage.getItem("fw_uid")||Math.random().toString(36).slice(2);
-  sessionStorage.setItem("fw_uid",uid);
-  let sb=null, chan=null, joined=false;
+// ── 発数をインクリメント（必ずここを通す） ──
+function incTotal(){
+  localTotal++;
+  setTotal(localTotal);
+  if(!sbClient || soloMode){ return; }   // ソロ or SDK未ロード
+  if(!joined){ pendingTotal++; return; } // まだ参加前
+  sbClient.rpc("fw_increment");
+}
 
-  function init(){
-    sb = window.supabase.createClient(SB_URL, SB_KEY);
+// ── Supabase SDK をロードして接続 ──
+if(SB_URL && SB_KEY){
+  const s=document.createElement("script");
+  s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
+  s.onload=()=>{
+    sbClient = window.supabase.createClient(SB_URL, SB_KEY);
 
-    // ─ 累計発数: 初期値取得 + リアルタイム購読 ─
-    sb.from("fw_stats").select("value").eq("key","total").single()
-      .then(({data})=>{ if(data) sTotalEl.textContent=Number(data.value).toLocaleString(); });
-    sb.channel("stats-watch")
-      .on("postgres_changes",
-        {event:"UPDATE",schema:"public",table:"fw_stats"},
-        p=>{ sTotalEl.textContent=Number(p.new.value).toLocaleString(); })
+    // ① 累計初期値を取得
+    sbClient.from("fw_stats").select("value").eq("key","total").single()
+      .then(({data,error})=>{
+        if(!error && data) setTotal(Number(data.value));
+      });
+
+    // ② 累計のリアルタイム購読
+    sbClient.channel("stats-watch")
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"fw_stats"},
+        p=>{ if(!soloMode) setTotal(Number(p.new.value)); })
       .subscribe();
 
-    // ─ メインチャンネル: Presence(参加人数) + Broadcast(打ち上げ) ─
-    chan = sb.channel("fireworks", {config:{presence:{key:uid}, broadcast:{self:false}}});
-
-    chan.on("presence", {event:"sync"}, ()=>{
-      const n = Object.keys(chan.presenceState()).length;
-      // 初回sync: 定員チェックしてから入場
-      if(!joined && !viewOnly){
-        if(n >= CAPACITY){
-          fullNow.textContent = n;
-          fullOverlay.classList.add("show");
-          return; // track せず観覧のみ(Broadcastは受信できる)
-        }
-        joined = true;
-        chan.track({t: Date.now()});
-        badgeEl.textContent="ライブ"; badgeEl.classList.add("live");
-      }
-      sOnlineEl.textContent = `${Math.max(n, joined?1:0)}人`;
+    // ③ メインチャンネル（Presence + Broadcast）
+    sbChan = sbClient.channel("fireworks-v2",{
+      config:{
+        presence:{ key: uid },
+        broadcast:{ self: false },
+      },
     });
 
-    chan.on("broadcast", {event:"launch"}, ({payload:d})=>{
-      if(!d || d.uid===uid) return;
+    sbChan.on("presence",{event:"sync"},()=>{
+      const state = sbChan.presenceState();
+      const n = Object.keys(state).length;
+
+      if(!soloMode) setOnline(Math.max(n, joined ? 1 : 0));
+
+      // 初回: 定員チェックして入場
+      if(!joined && !viewOnly && !soloMode){
+        if(n >= CAPACITY){
+          document.getElementById("fullNow").textContent = n;
+          document.getElementById("fullOverlay").classList.add("show");
+          return;
+        }
+        sbChan.track({uid, t: Date.now()});
+        joined = true;
+        setConnState("live");
+        soloBtn.style.display="inline-flex";
+        soloDivider.style.display="block";
+        // ロード前に溜まった発数を一括送信
+        if(pendingTotal > 0){
+          for(let i=0;i<pendingTotal;i++) sbClient.rpc("fw_increment");
+          pendingTotal = 0;
+        }
+      }
+    });
+
+    sbChan.on("broadcast",{event:"launch"},({payload:d})=>{
+      if(!d || d.uid===uid || soloMode) return;
       const x=d.xr*W, y=d.yr*HZ;
       if(d.type==="fountain") fountainObjs.push(new Fountain(x));
       else rockets.push(new Rocket(x,y,0,d.type));
     });
 
-    chan.subscribe();
-  }
-
-  // supabase-js v2 を CDN から動的ロード
-  const s=document.createElement("script");
-  s.src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
-  s.onload=init;
+    sbChan.subscribe();
+  };
   document.head.appendChild(s);
+} else {
+  // Supabase 未設定 → ソロモード固定
+  soloMode = true;
+  setConnState("solo");
+  setOnline(1);
+  setTotal(localTotal);
+}
 
-  function broadcast(x,y,type){
-    if(!chan||!joined||viewOnly)return;
-    chan.send({type:"broadcast",event:"launch",payload:{xr:x/W,yr:y/HZ,type,uid}});
-    sb.rpc("fw_increment");
-  }
-  return {broadcast,incTotal(){},isLive:true};
-})();
+// ── ブロードキャスト ──
+function broadcast(x,y,type){
+  if(!sbChan || !joined || soloMode || viewOnly) return;
+  sbChan.send({type:"broadcast",event:"launch",payload:{xr:x/W,yr:y/HZ,type,uid}});
+}
 
 /* ================================================================
- * ショットカウンター & マイルストーン演出
+ * Shot counter & Milestone
  * ================================================================ */
 let shotCount=0;
 const counterEl=document.getElementById("counter");
-const msEl=document.getElementById("ms");
-const msN=document.getElementById("ms-n");
+const msEl=document.getElementById("ms"),msN=document.getElementById("msN");
 let msTimer=null;
 
 function incShot(){
@@ -905,29 +705,35 @@ function incShot(){
   counterEl.textContent=`${shotCount} 発`;
   counterEl.classList.remove("pop");
   requestAnimationFrame(()=>counterEl.classList.add("pop"));
-  Multi.incTotal();
-  if(shotCount%50===0)milestone(shotCount);
+  incTotal();
+  if(shotCount%50===0) milestone(shotCount);
 }
-
 function milestone(n){
   const bc=Math.min(6+Math.floor(n/50),18);
   for(let i=0;i<bc;i++)
-    setTimeout(()=>rockets.push(new Rocket(R(W*.08,W*.92),R(H*.07,H*.38),0,
-      TYPES_K[(Math.random()*TYPES_K.length)|0])),i*R(70,200));
+    setTimeout(()=>rockets.push(new Rocket(R(W*.08,W*.92),R(H*.07,H*.38),0,TYPES_K[(Math.random()*TYPES_K.length)|0])),i*R(70,200));
   const fc=Math.min(3+Math.floor(n/100),7);
-  for(let i=0;i<fc;i++)
-    setTimeout(()=>fountainObjs.push(new Fountain(W*(i+.5)/fc,5)),i*110);
-  msN.textContent=n;
-  msEl.classList.remove("show");
+  for(let i=0;i<fc;i++)setTimeout(()=>fountainObjs.push(new Fountain(W*(i+.5)/fc,5)),i*110);
+  msN.textContent=n;msEl.classList.remove("show");
   if(msTimer)clearTimeout(msTimer);
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    msEl.classList.add("show");
-    msTimer=setTimeout(()=>msEl.classList.remove("show"),3200);
-  }));
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{msEl.classList.add("show");msTimer=setTimeout(()=>msEl.classList.remove("show"),3200);}));
 }
 
 /* ================================================================
- * 種類チップ
+ * 満員オーバーレイ
+ * ================================================================ */
+document.getElementById("fullWatch").addEventListener("click",()=>{
+  viewOnly=true;
+  document.getElementById("fullOverlay").classList.remove("show");
+  viewBanner.classList.add("show");
+  document.getElementById("bar").style.display="none";
+  document.getElementById("hint").classList.add("gone");
+  canvas.style.cursor="default";
+  setConnState("full");
+});
+
+/* ================================================================
+ * Type chips
  * ================================================================ */
 const TYPES_UI=[
   {key:"random",label:"おまかせ"},{key:"peony",label:"牡丹"},
@@ -951,85 +757,60 @@ TYPES_UI.forEach(({key,label})=>{
 });
 
 /* ================================================================
- * 打ち上げ
+ * Launch
  * ================================================================ */
 function launch(x,y,scatter=0,typeOvr){
   Sfx.unlock();
   const type=typeOvr||selType;
   if(type==="fountain"){
     fountainObjs.push(new Fountain(x));
-    incShot(); Multi.broadcast(x,y,"fountain");
-    return;
+    incShot(); broadcast(x,y,"fountain"); return;
   }
   const ty=Math.min(Math.max(y,H*.05),HZ-60);
   rockets.push(new Rocket(x,ty,scatter,type));
-  incShot(); Multi.broadcast(x,ty,type);
+  incShot(); broadcast(x,ty,type);
 }
 
 let hintGone=false;
 canvas.addEventListener("pointerdown",e=>{
-  if(viewOnly) return; // 観覧モードは操作不可
+  if(viewOnly)return;
   Sfx.unlock();
-  if(e.clientY>HZ&&selType==="random"){
-    fountainObjs.push(new Fountain(e.clientX));
-    incShot(); Multi.broadcast(e.clientX,e.clientY,"fountain");
-  } else {
-    launch(e.clientX,e.clientY);
-  }
+  if(e.clientY>HZ&&selType==="random"){ fountainObjs.push(new Fountain(e.clientX));incShot();broadcast(e.clientX,e.clientY,"fountain");}
+  else launch(e.clientX,e.clientY);
   if(!hintGone){document.getElementById("hint").classList.add("gone");hintGone=true;}
 });
 
 /* ================================================================
- * 自動モード（花火大会風の構成）
+ * Auto show
  * ================================================================ */
 let autoMode=true,autoTimer=0,cycleN=0;
 setInterval(()=>{
   if(!autoMode||document.hidden)return;
-  autoTimer-=.5; if(autoTimer>0)return;
+  autoTimer-=.5;if(autoTimer>0)return;
   cycleN++;
   if(cycleN%9===0){
-    // スターマイン：扇状6連発
     const n=6,cx=R(W*.28,W*.72);
-    for(let i=0;i<n;i++)
-      setTimeout(()=>{
-        const x=cx+(i-(n-1)/2)*R(50,110);
-        rockets.push(new Rocket(x,R(H*.09,H*.32),0,TYPES_K[(Math.random()*TYPES_K.length)|0]));
-        incShot();
-      },i*120);
+    for(let i=0;i<n;i++)setTimeout(()=>{rockets.push(new Rocket(cx+(i-(n-1)/2)*R(50,110),R(H*.09,H*.32),0,TYPES_K[(Math.random()*TYPES_K.length)|0]));incShot();},i*120);
     autoTimer=R(4,6.5);
   } else if(cycleN%13===0){
-    // 噴水
-    fountainObjs.push(new Fountain(R(W*.15,W*.85)));
-    incShot();
-    autoTimer=R(2.5,4.5);
+    fountainObjs.push(new Fountain(R(W*.15,W*.85)));incShot();autoTimer=R(2.5,4.5);
   } else {
     const burst=1+((Math.random()*3)|0);
-    for(let i=0;i<burst;i++)
-      setTimeout(()=>launch(R(W*.1,W*.9),R(H*.09,H*.44),30,"random"),i*R(150,420));
+    for(let i=0;i<burst;i++)setTimeout(()=>launch(R(W*.1,W*.9),R(H*.09,H*.44),30,"random"),i*R(150,420));
     autoTimer=R(1.5,4);
   }
 },500);
 
 /* ================================================================
- * UI コントロール
+ * UI controls
  * ================================================================ */
-const muteBtn=document.getElementById("muteBtn");
-const sIcon=document.getElementById("sIcon");
+const muteBtn=document.getElementById("muteBtn"),sIcon=document.getElementById("sIcon");
 const spkOn=`<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>`;
 const spkOff=`<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>`;
-muteBtn.addEventListener("click",()=>{
-  const nm=!Sfx.muted; Sfx.setMuted(nm);
-  muteBtn.classList.toggle("active",!nm);
-  sIcon.innerHTML=nm?spkOff:spkOn;
-  if(!nm)Sfx.unlock();
-});
+muteBtn.addEventListener("click",()=>{const nm=!Sfx.muted;Sfx.setMuted(nm);muteBtn.classList.toggle("active",!nm);sIcon.innerHTML=nm?spkOff:spkOn;if(!nm)Sfx.unlock();});
 document.getElementById("vol").addEventListener("input",e=>Sfx.setVol(e.target.value/100));
 const autoBtn=document.getElementById("autoBtn");
-autoBtn.addEventListener("click",()=>{
-  autoMode=!autoMode;
-  autoBtn.classList.toggle("active",autoMode);
-  if(autoMode)Sfx.unlock();
-});
+autoBtn.addEventListener("click",()=>{autoMode=!autoMode;autoBtn.classList.toggle("active",autoMode);if(autoMode)Sfx.unlock();});
 </script>
 </body>
 </html>
